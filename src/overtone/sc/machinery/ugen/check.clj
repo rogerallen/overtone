@@ -13,7 +13,9 @@
   (= (:rate ug) rate-int))
 
 (defn name-of [obj]
-  (overtone-ugen-name (:name obj)))
+  (if (:name obj)
+    (overtone-ugen-name (:name obj))
+    (with-out-str (pr obj))))
 
 (defn name-of? [obj name]
   (= (name-of obj) name))
@@ -59,14 +61,19 @@
         params-with-message (conj params message)]
     `(defn ~name
        (~params
-        (fn ~'[rate num-outs inputs spec]
+        (fn ~'[rate num-outs inputs ugen spec]
           (when-not (do ~@exprs) (str ~default-message))))
        (~params-with-message
-        (fn ~'[rate num-outs inputs spec]
+        (fn ~'[rate num-outs inputs ugen spec]
           (when-not (do ~@exprs) (str ~message " -- " ~default-message)))))))
 
 (defcheck same-rate-as-first-input []
-  (str "Rate mismatch: "(name-of (first inputs)) " is at rate " (:rate-name (first inputs))  " yet the containing ugen is at " (REVERSE-RATES rate))
+  (str "Rate mismatch: "
+       (name-of (first inputs))
+       " is at rate "
+       (:rate-name (first inputs))
+       " yet the containing ugen is at "
+       (REVERSE-RATES rate))
   (= (:rate (first inputs)) rate))
 
 (defcheck first-input-ar []
@@ -136,14 +143,26 @@
   (let [val (nth inputs n)]
     (input-stream? val)))
 
+(defcheck arg-is-sequential? [k]
+  (str "Argument with key " k " must be a sequence.")
+  (let [merged-args (:arg-map ugen)]
+    (sequential? (get merged-args k))))
+
+(defcheck arg-is-list-of-demand-ugens? [k]
+  (str "Argument with key " k " must be a list of ugens all at demand rate")
+  (let [merged-args  (:arg-map ugen)
+        demand-ugens (get merged-args k)]
+    (and (sequential? demand-ugens)
+         (every? #(= :dr (:rate-name %)) demand-ugens))))
+
 (defn- mk-check-all
   "Create a check-all fn which will check all the specified check-fns to see if
   they don't return errors (errors are represented as string return vals). If
   they do, concatanate the errors and return them."
   [& check-fns]
   (let [all-checks (apply juxt check-fns)]
-    (fn [rate num-outs inputs spec]
-      (let [errors (all-checks rate num-outs inputs spec)]
+    (fn [rate num-outs inputs ugen spec]
+      (let [errors (all-checks rate num-outs inputs ugen spec)]
         (when-not (every? nil? errors)
           (apply str errors))))))
 
@@ -152,9 +171,9 @@
   [rate-name]
   (fn [& check-fns]
     (let [check-all-fn (apply mk-check-all check-fns)]
-      (fn [rate num-outs inputs spec]
+      (fn [rate num-outs inputs ugen spec]
         (when (= rate (RATES rate-name))
-          (check-all-fn rate num-outs inputs spec))))))
+          (check-all-fn rate num-outs inputs ugen spec))))))
 
 (defn when-ar
   "Takes a list of check fns and ensures they all pass if the ugen is :ar rate"

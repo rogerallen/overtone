@@ -186,10 +186,6 @@
                  (first args))))
       arg-map)))
 
-(defn arg-lister [args arg-names default-map]
-  (let [arg-map (arg-mapper args arg-names default-map)]
-    (vec (map arg-map arg-names))))
-
 (defmacro defunk [name docstring args & body]
   (let [arg-names (map first (partition 2 args))
         arg-keys (vec (map keyword arg-names))
@@ -311,6 +307,9 @@
 
   (overtone-ugen-name \"SinOsc\") ;=> \"sin-osc\""
   [n]
+  (when-not (string? n)
+    (throw (IllegalArgumentException. (str "Cannot convert non-string obj " (with-out-str (pr n)) " to an overtone ugen name"))))
+
   (let [n (.replaceAll n "([a-z])([A-Z])" "$1-$2")
         n (.replaceAll n "([a-z-])([0-9])([A-Z])" "$1$2-$3")
         n (.replaceAll n "([A-Z])([A-Z][a-z])" "$1-$2")
