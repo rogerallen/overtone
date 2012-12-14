@@ -6,10 +6,10 @@
             [overtone version midi osc speech]
             [overtone.algo chance scaling trig]
             [overtone.sc bindings buffer bus envelope example info
-                         ugens defcgen node sample server synth trigger
+                         ugens defcgen node sample server synth
                          foundation-groups]
             [overtone.sc.cgens oscillators demand mix io buf-io env tap
-                               line freq beq-suite berlach bhob]
+                               line freq beq-suite berlach bhob info]
             [overtone.music rhythm pitch tuning time]
             [overtone.studio mixer inst util fx wavetable midi core]
             [overtone.repl ugens examples shell inst debug]
@@ -34,7 +34,6 @@
    'overtone.sc.sample
    'overtone.sc.server
    'overtone.sc.synth
-   'overtone.sc.trigger
    'overtone.sc.ugens
    'overtone.sc.defcgen
    'overtone.sc.foundation-groups
@@ -50,6 +49,7 @@
    'overtone.sc.cgens.beq-suite
    'overtone.sc.cgens.berlach
    'overtone.sc.cgens.bhob
+   'overtone.sc.cgens.info
    'overtone.studio.mixer
    'overtone.studio.inst
    'overtone.studio.fx
