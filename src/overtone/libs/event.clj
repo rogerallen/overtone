@@ -164,7 +164,7 @@
   (log-event "Removing event handler associated with key: " key)
   (handlers/remove-handler! handler-pool key))
 
-(defn remove-all-handlers
+(defn- remove-all-handlers
   "Remove all handlers."
   []
   (let [[old new] (swap-returning-prev! lossy-workers* (fn [_] {}))]
@@ -260,6 +260,6 @@
   ([event-key] (get @monitor* event-key)))
 
 (defn event-monitor-keys
-  "Return a seq of all the keys of most recently seen events."
+  "Return a set of all the keys of most recently seen events."
   []
-  (keys @monitor*))
+  (into #{} (keys @monitor*)))

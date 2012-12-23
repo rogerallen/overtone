@@ -17,7 +17,14 @@
 
 ### Major Features
 
-* New native server implementation
+* New, all clojure, in-memory scsynth interface using clj-native
+* GUI widgets using seesaw and swing (see examples in overtone.examples.gui)
+  - synth controls to adjust parameters (`synth-controller`, `live-synth-controller`)
+  - mixer for instruments (`mixer`)
+  - piano roll and two types of step sequencers (`piano-roll`, `step-sequencer`, `stepinator`)
+  - x,y,z surface controller (`surface`)
+  - wave-form and wave-table editors for wave-table synthesis (`waveform-editor`, `wavetable-editor`)
+  - basic spectrogram showing frequency space representation (`spectrogram`)
 * GUI widgets
 * `on-latest-event`
 * Extra ugens - see `overtone/sc/machinery/ugen/metadata/extras/README.md` for progress
@@ -41,8 +48,14 @@
 * `event-monitor-keys` - returns seq of all keys of recently seen events
 * `midi-capture-next-controller-key` Returns the event key for the next modified controller
 * `buffer-write-relay` - similar to buffer-write! but doesn't require native synth. Can be very slow.
-* `chord-degree` - REturns the notes constructed by picking thirds in the given note of a given scale
+* `chord-degree` - Returns the notes constructed by picking thirds in the given note of a given scale
+* `pause` - Pause a synth or group
+* `start` - Pause a synth or group
 
+### Removed fns
+* `on-trigger` - prefer event system
+* `remove-trigger` - prefer event system
+* `remove-all-handlers` - calling this removes Overtone's default handlers rendering the system useless.
 
 ### Renamed fns
 
