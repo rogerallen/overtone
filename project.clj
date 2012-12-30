@@ -39,7 +39,7 @@
        (vec (set (concat (get JVMOPTS :any)
                          (get JVMOPTS os))))))
 
-(defproject overtone "0.8.0-RC10"
+(defproject overtone "0.8.0-RC13"
   :description "Collaborative Programmable Music. (http://overtone.github.com)"
   :url "http://overtone.github.com/"
   :dependencies [[org.clojure/clojure "1.3.0"]
@@ -51,8 +51,8 @@
                  [overtone/byte-spec "0.3.1"]
                  [overtone/midi-clj "0.4.0"]
                  [overtone/libs.handlers "0.2.0"]
-                 [overtone/scsynth "3.5.7-SNAPSHOT"]
-                 [overtone/scsynth-extras "3.5.7-SNAPSHOT"]
+                 [overtone/scsynth "3.5.7.0"]
+                 [overtone/scsynth-extras "3.5.7.0"]
                  [clj-glob "1.0.0"]
                  [org.clojure/core.match "0.2.0-alpha11"]
                  [seesaw "1.4.2"]]

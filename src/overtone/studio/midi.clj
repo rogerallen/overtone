@@ -2,10 +2,10 @@
   (:use [overtone.sc node]
         [overtone midi]
         [overtone.at-at :only (mk-pool every)]
-        [overtone.libs.event])
+        [overtone.libs.event]
+        [overtone.sc.defaults :only [INTERNAL-POOL]])
   (:require [overtone.config.log :as log]))
 
-(defonce MIDI-POOL (mk-pool))
 (defonce midi-devices* (atom {}))
 (defonce midi-control-agents* (atom {}))
 (defonce poly-players* (atom {}))
@@ -72,7 +72,7 @@
 
 (defonce __DEVICE-POLLER__
   (detect-midi-devices))
-;  (every MIDI-POLL-RATE #'detect-midi-devices MIDI-POOL :desc "Check for new midi devices"))
+;  (every MIDI-POLL-RATE #'detect-midi-devices INTERNAL-POOL :desc "Check for new midi devices"))
 
 (defn midi-poly-player
   "Sets up the event handlers and manages synth instances to easily play
@@ -107,7 +107,8 @@
        (on-event off-event-key (fn [{note :note velocity :velocity}]
                                  (let [velocity (float (/ velocity 127 ))]
                                    (when-let [n (get @notes* note)]
-                                     (node-control n [:gate 0 :after-touch velocity])
+                                     (binding [*inactive-node-modification-error* :silent]
+                                       (node-control n [:gate 0 :after-touch velocity]))
                                      (swap! notes* dissoc note))))
                  off-key)
 
