@@ -49,12 +49,14 @@
                  [overtone/at-at "1.0.0"]
                  [overtone/osc-clj "0.8.1"]
                  [overtone/byte-spec "0.3.1"]
-                 [overtone/midi-clj "0.4.0"]
+                 [overtone/midi-clj "0.5.0"]
                  [overtone/libs.handlers "0.2.0"]
                  [overtone/scsynth "3.5.7.0"]
                  [overtone/scsynth-extras "3.5.7.0"]
                  [clj-glob "1.0.0"]
                  [org.clojure/core.match "0.2.0-alpha11"]
                  [seesaw "1.4.2"]]
+  :profiles {:test {:dependencies [[bultitude "0.2.0"]
+                                   [polynome "0.2.2"]]}}
   :native-path "native"
   :jvm-opts ~(jvm-opts))
