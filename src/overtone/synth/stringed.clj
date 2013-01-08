@@ -40,6 +40,13 @@
         note-gate-pairs (apply vector (map vector note-ins gate-ins))
         ]
     `(defsynth ~name
+       ~(str "a stringed instrument synth with " num-strings
+             " strings mixed and sent thru
+  distortion and reverb effects followed by a low-pass filter.  Use
+  the pluck-strings and strum-strings helper functions to play the
+  instrument. Note: the strings need to be silenced with a gate -> 0
+  transition before a gate -> 1 transition activates it.")
+
        [~@both-default-ins
         ~'dur       {:default 10.0  :min 1.0 :max 100.0}
         ~'decay     {:default 30    :min 1   :max 100} ;; pluck decay
@@ -273,9 +280,14 @@
 (gen-stringed-synth guitar 6)
 
 ;; ======================================================================
-;; Create a single string synth suitable for the midi-poly-player.
-;; For this, we need to make the default gate 1.
+;; Ektara - a single-string synth.  Mainly for use with the midi-poly-player.
+;; 
+;; Since "string" was too generic a name, I asked the google for some
+;; help.  Wikipedia tells me that there is a single-stringed
+;; instrument called the "Ektara", so that is where the name comes
+;; from.
+;; 
+;; For use with midi-poly-player, we need to make the default gate 1.
 ;; Example:
-;;   (def bare-string (partial string :gate 1))
-;;   (def ss (midi-poly-player bare-string))
-(gen-stringed-synth string 1)
+;;   (def mpp (midi-poly-player (partial ektara :gate 1)))
+(gen-stringed-synth ektara 1)
