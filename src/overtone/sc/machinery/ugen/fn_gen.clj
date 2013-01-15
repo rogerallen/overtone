@@ -6,6 +6,7 @@
         [overtone.libs counters]
         [overtone.helpers seq]
         [overtone.sc bindings]
+        [overtone.sc.node :only [idify]]
         [overtone.sc.machinery.ugen sc-ugen defaults specs special-ops intern-ns]
         [overtone.sc.machinery.ugen.metadata unaryopugen binaryopugen])
   (:require [overtone.sc.machinery.ugen.doc :as doc]))
@@ -99,7 +100,9 @@
     (mk-scugen spec rate special args)))
 
 (defn- make-ugen
-  "Create a callable map representing a ugen."
+  "Create a callable map representing a ugen spec and fn for creating a
+   sc-ugen (a datastructure representing a specific instantiation of a
+   ugen given a set of arguments)."
   [spec rate ugen-fn]
   (callable-map {:name       (overtone-ugen-name (:name spec))
                  :summary    (:summary spec)
@@ -122,6 +125,13 @@
         (first expanded)
         expanded))))
 
+(defn idify-args
+  "Returns a fn which idifies args (or leaves them untouched if they
+  can't be converted to an sc id)"
+  [f]
+  (fn [& args]
+    (apply f (idify args))))
+
 (defn unwrap-map-arg
   "Returns a fn which checks to see if its args is a list containing a map,
   and if so unwraps it. Otherwise applies f directly with args"
@@ -130,9 +140,6 @@
     (if (and
          (= 1 (count args))
          (not (sc-ugen? (first args)))
-         (not (isa? (type (first args)) :overtone.sc.buffer/buffer))
-         (not (isa? (type (first args)) :overtone.sc.bus/audio-bus))
-         (not (isa? (type (first args)) :overtone.sc.bus/control-bus))
          (map? (first args)))
       (apply f (flatten (seq (first args))))
       (apply f args))))
@@ -142,9 +149,10 @@
   arguments, rates, etc."
   [spec rate special]
   (let [expand-flags (map #(:expands? %) (:args spec))]
-    (unwrap-map-arg
-     (make-expanding
-      (ugen-base-fn spec rate special) expand-flags))))
+    (idify-args
+     (unwrap-map-arg
+      (make-expanding
+       (ugen-base-fn spec rate special) expand-flags)))))
 
 ;; TODO: Figure out the complete list of control types
 ;; This is used to determine the controls we list in the synthdef, so we need

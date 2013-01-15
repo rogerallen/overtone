@@ -3,7 +3,7 @@
   (:require [overtone.jna-path]
             [overtone.at-at :as at-at])
   (:use [overtone.helpers.file :only [get-current-directory home-dir]]
-        [overtone.helpers.system :only [get-os get-cpu-bits windows-os?]]
+        [overtone.helpers.system :only [get-os get-cpu-bits windows-os? os-description]]
         [overtone.sc.machinery.server args]
         [overtone.sc.defaults :only [INTERNAL-POOL]]
         [overtone.nativescsynth.availability :only [native-scsynth-lib-availability]]
@@ -23,11 +23,12 @@
 
 (defonce __LOAD_SCSYNTH_NATIVE_LIB__
   (do
-    (defclib
-      libc
-      (:libname "c")
-      (:functions
-        (fflush fflush [void*] i32)))
+    (when-not (windows-os?)
+      (defclib
+        libc
+        (:libname "c")
+        (:functions
+         (fflush fflush [void*] i32))))
 
     (when (native-scsynth-available?)
       (defclib
@@ -162,7 +163,9 @@
 
       (when-not (windows-os?)
         (loadlib libc))
-      (loadlib lib-scsynth)
+
+      (when (native-scsynth-available?)
+        (loadlib lib-scsynth))
 
       (defonce flusher (at-at/every 500 #(fflush nil) INTERNAL-POOL :desc "Flush stdout")))))
 
@@ -213,7 +216,7 @@
   ([recv-fn] (scsynth recv-fn {}))
   ([recv-fn options-map]
      (when (not (native-scsynth-available?))
-       (throw (Exception. "Can't connect to native server - no compatible libraries for your system are available.")))
+       (throw (Exception. (str "Can't connect to a native server - this version of Overtone does not yet have any compatible libraries for your system: " (os-description) ". Please consider contributing a build to the project."))))
      (let [options (byref world-options)
            cb      (callback reply-callback
                              (fn [addr msg-buf msg-size]
