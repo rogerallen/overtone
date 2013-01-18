@@ -50,9 +50,20 @@
 (defonce loaded-samples* (atom {}))
 (defonce cached-samples* (atom {}))
 
-(defrecord Sample [id size n-channels rate allocated-on-server path args name]
+(defrecord Sample [id size n-channels rate status path args name]
   to-sc-id*
   (to-sc-id [this] (:id this)))
+
+(defmethod print-method Sample [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
 
 (defn- load-sample*
   [path arg-map]
@@ -169,10 +180,21 @@
       (= n-channels 2) (apply stereo-player :tgt target :pos pos id pargs))))
 
 (defrecord-ifn PlayableSample
-  [id size n-channels rate allocated-on-server path args name]
+  [id size n-channels rate status path args name]
   sample-player
   to-sc-id*
   (to-sc-id [this] (:id this)))
+
+(defmethod print-method PlayableSample [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
 
 (defn sample
   "Loads a .wav or .aiff file into a memory buffer. Returns a function
@@ -194,8 +216,6 @@
 
 (derive ::sample :overtone.sc.buffer/file-buffer)
 (derive ::playable-sample ::sample)
-
-(defmethod buffer-id ::sample [sample] (:id sample))
 
 (defmacro defsample [s-name path & args]
   `(def ~s-name (sample ~path ~@args)))

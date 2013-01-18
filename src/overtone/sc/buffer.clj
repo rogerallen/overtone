@@ -8,9 +8,36 @@
         [overtone.helpers audio-file lib file]
         [overtone.sc.util :only [id-mapper]]))
 
+(defonce ^{:dynamic true} *inactive-buffer-modification-error* :exception)
+
+(defn- inactive-buffer-modification-error
+  "The default error behaviour triggered when a user attempts to work
+   with an inactive buffer"
+  [buf err-msg]
+  (condp = *inactive-buffer-modification-error*
+    :silent    nil ;;do nothing
+    :warning   (println "Warning - " err-msg buf " " (with-out-str (print buf)))
+    :exception (throw (Exception. (str "Error - " err-msg " " (with-out-str (print buf)))))
+    (throw
+     (IllegalArgumentException.
+      (str "Unexpected value for *inactive-buffer-modification-error*: "
+           *inactive-buffer-modification-error*
+           "Expected one of :silent, :warning, :exception.")))))
+
 (defrecord BufferInfo [id size n-channels rate n-samples rate-scale duration]
   to-sc-id*
   (to-sc-id [this] (:id this)))
+
+(defmethod print-method BufferInfo [b w]
+  (.write w (format "#<buffer-info: %fs %s %d>"
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
+
+
 
 (defn buffer-info
   "Fetch the information for buffer associated with buf-id (either an
@@ -50,16 +77,30 @@
         :rate-scale rate-scale
         :duration duration}))))
 
-(defrecord Buffer [id size n-channels rate allocated-on-server]
+(defrecord Buffer [id size n-channels rate status name]
   to-sc-id*
   (to-sc-id [this] (:id this)))
+
+(defmethod print-method Buffer [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
 
 (defn buffer
   "Synchronously allocate a new zero filled buffer for storing audio
   data with the specified size and num-channels. Size will be
   automatically floored and converted to a Long - i.e. 2.7 -> 2"
-  ([size] (buffer size 1))
-  ([size num-channels]
+  ([size] (buffer size 1 ""))
+  ([size num-channels-or-name] (if (string? num-channels-or-name)
+                                 (buffer 1 num-channels-or-name)
+                                 (buffer num-channels-or-name "")))
+  ([size num-channels name]
      (let [size (long size)
            id   (with-server-self-sync
                   (fn [uid]
@@ -72,9 +113,10 @@
 
        (map->Buffer
         (assoc info
-          :allocated-on-server (atom true))))))
+          :name name
+          :status (atom :live))))))
 
-(defrecord BufferFile [id size n-channels rate allocated-on-server path]
+(defrecord BufferFile [id size n-channels rate status path]
   to-sc-id*
   (to-sc-id [this] (:id this)))
 
@@ -107,7 +149,7 @@
 
            (map->BufferFile
             (assoc info
-              :allocated-on-server (atom true))))))))
+              :status (atom :live))))))))
 
 (derive BufferInfo ::buffer-info)
 (derive Buffer     ::buffer)
@@ -131,6 +173,19 @@
   [buf]
   (isa? (type buf) ::file-buffer))
 
+(defn buffer-live?
+  "Returns true if b is a live buffer on the server"
+  [b]
+  (and (buffer? b)
+       (= :live @(:status b))))
+
+(defn ensure-buffer-active!
+  ([buf] (ensure-buffer-active! buf "Trying to work with an inactive buffer."))
+  ([buf err-msg]
+     (when (and (buffer? buf)
+                (not (buffer-live? buf)))
+       (inactive-buffer-modification-error buf err-msg))))
+
 (defn buffer-free
   "Synchronously free an audio buffer and the memory it was consuming."
   [buf]
@@ -141,7 +196,7 @@
                                       id
                                       1
                                       #(do (snd "/b_free" id)
-                                           (reset! (:allocated-on-server buf) false)
+                                           (reset! (:status buf) :destroyed)
                                            (server-sync uid)))))
     buf))
 
@@ -154,8 +209,8 @@
   reading of buffer data with the internal server, see buffer-data."
   ([buf] (buffer-read buf 0 (:size buf)))
   ([buf start len]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
-     (assert @(:allocated-on-server buf))
      (let [buf-id  (:id buf)
            samples (float-array len)]
        (loop [n-vals-read 0]
@@ -186,6 +241,7 @@
   writing the data (defaults to 0)."
   ([buf data] (buffer-write! buf 0 data))
   ([buf start-idx data]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
      (when (> (count data) MAX-OSC-SAMPLES)
        (throw (Exception. (str "Error - the data you attempted to write to the buffer was too large to be sent via UDP."))))
@@ -204,6 +260,7 @@
   very slow."
   ([buf data] (buffer-write-relay! buf 0 data))
   ([buf start-idx data]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
      (loop [data-left data
             idx       0]
@@ -219,6 +276,7 @@
   on the server. Defaults to filling in the full buffer unless start and
   len vals are specified. Asynchronous."
   ([buf val]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
      (buffer-fill! buf 0 (:size buf) val))
   ([buf start len val]
@@ -231,6 +289,7 @@
   the server. Index defaults to 0 if not specified."
   ([buf val] (buffer-set! buf 0 val))
   ([buf index val]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
      (snd "/b_set" (:id buf) index (double val))
      buf))
@@ -239,6 +298,7 @@
   "Read a single value from a buffer. Index defaults to 0 if not specified."
   ([buf] (buffer-get buf 0))
   ([buf index]
+     (ensure-buffer-active! buf)
      (assert (buffer? buf))
      (let [buf-id (:id buf)
            prom   (recv "/b_set" (fn [msg]
@@ -269,6 +329,7 @@
    (buffer-save buf \"~/Desktop/foo.wav\" :header \"aiff\" :samples \"int32\"
                                           :start-frame 100)"
   [buf path & args]
+  (ensure-buffer-active! buf)
   (assert (buffer? buf))
 
   (let [path (resolve-tilde-path path)
@@ -283,7 +344,7 @@
                     n-frames start-frame 0)
     :buffer-saved))
 
-(defrecord BufferOutStream [id size n-channels header samples rate allocated-on-server path open?]
+(defrecord BufferOutStream [id size n-channels header samples rate status path open?]
   to-sc-id*
   (to-sc-id [this] (:id this)))
 
@@ -347,7 +408,7 @@
   (reset! (:open? buf-stream) false)
   (:path buf-stream))
 
-(defrecord BufferInStream [id size n-channels rate allocated-on-server path open?]
+(defrecord BufferInStream [id size n-channels rate status path open?]
   to-sc-id*
   (to-sc-id [this] (:id this)))
 
@@ -401,11 +462,10 @@
        (snd "/b_read" id path pos -1 0 1))
      buf-cue))
 
-(defmulti buffer-id type)
-(defmethod buffer-id java.lang.Integer [id] id)
-(defmethod buffer-id java.lang.Long [id] id)
-(defmethod buffer-id ::buffer [buf] (:id buf))
-(defmethod buffer-id ::buffer-info [buf-info] (:id buf-info))
+(defn buffer-id
+  "Return the id of buffer b. Simply punts out to to-sc-id"
+  [b]
+  (to-sc-id b))
 
 (defmulti buffer-size type)
 (defmethod buffer-size ::buffer [buf] (:size buf))
@@ -416,6 +476,7 @@
   [buf]
   (when-not (internal-server?)
     (throw (Exception. (str "Only able to fetch buffer data directly from an internal server. Try #'buffer-read instead."))))
+  (ensure-buffer-active! buf)
   (let [buf-id (buffer-id buf)
         snd-buf (scsynth-get-buffer-data @sc-world* buf-id)]
     snd-buf))

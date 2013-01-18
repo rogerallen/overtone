@@ -46,7 +46,8 @@
       (node-control         [this params]
         "Modify control parameters of the synth node.")
       (node-control-range   [this ctl-start ctl-vals]
-        "Modify a range of control parameters of the synth node.")      (node-map-controls    [this names-busses]
+        "Modify a range of control parameters of the synth node.")
+      (node-map-controls    [this names-busses]
         "Connect a node's controls to a control bus.")
       (node-map-n-controls  [this start-control start-bus n]
         "Connect N controls of a node to a set of sequential control
@@ -429,8 +430,9 @@
   [node names-busses]
   (ensure-connected!)
   (ensure-node-active! node "Attempting to map the controls of a node that has been destroyed.")
+
   (let [node-id      (to-sc-id node)
-        names-busses (map idify (stringify names-busses))]
+        names-busses (-> names-busses stringify idify)]
     (apply snd "/n_map" node-id names-busses))
   node)
 

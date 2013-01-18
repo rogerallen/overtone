@@ -9,7 +9,7 @@
         [overtone.sc.machinery allocator]
         [overtone.sc.machinery.server connection comms]
         [overtone.helpers.lib :only [deref!]]
-        [overtone.osc :only [in-osc-bundle without-osc-bundle]])
+        [overtone.osc :only [in-osc-bundle without-osc-bundle in-unested-osc-bundle]])
   (:require [overtone.config.log :as log]))
 
 (defn connection-info
@@ -54,7 +54,7 @@
   have to worry about accidentally scheduling packets into a bundle
   started on another thread."
   [time-ms & body]
-  `(in-osc-bundle @server-osc-peer* ~time-ms (do ~@body)))
+  `(in-unested-osc-bundle @server-osc-peer* ~time-ms (do ~@body)))
 
 (defmacro snd-immediately
   [& body]
