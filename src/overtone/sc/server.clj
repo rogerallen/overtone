@@ -6,6 +6,7 @@
   overtone.sc.server
   (:import [java.util.concurrent TimeoutException])
   (:use [overtone.libs event deps]
+        [overtone.sc dyn-vars]
         [overtone.sc.machinery allocator]
         [overtone.sc.machinery.server connection comms]
         [overtone.helpers.lib :only [deref!]]
@@ -52,9 +53,21 @@
   "All messages sent within the body will be sent in the same
   timestamped OSC bundle.  This bundling is thread-local, so you don't
   have to worry about accidentally scheduling packets into a bundle
-  started on another thread."
+  started on another thread.
+
+  Warning, all liveness and node blocking when not ready checks and
+  functionality is disabled within the context of this macro. This means
+  that it's perfectly possible for you to be controlling a different
+  node than you expect to be controlling if your control message is
+  being executed in the future and in the meantime, the node you wished
+  to control has been terminated and another node has been created with
+  the same id (ids are recycled). "
   [time-ms & body]
-  `(in-unested-osc-bundle @server-osc-peer* ~time-ms (do ~@body)))
+  `(binding [overtone.sc.dyn-vars/*inactive-node-modification-error*   :silent
+             overtone.sc.dyn-vars/*inactive-buffer-modification-error* :silent
+             overtone.sc.dyn-vars/*block-node-until-ready?*            false]
+     (in-unested-osc-bundle @server-osc-peer* ~time-ms (do ~@body))))
+
 
 (defmacro snd-immediately
   [& body]
@@ -152,7 +165,7 @@
     (let [p (server-recv "/status.reply")]
       (snd "/status")
       (try
-        (apply parse-status (:args (deref! p)))
+        (apply parse-status (:args (deref! p "attempting to get the server status. Perhaps the server is down?")))
         (catch TimeoutException t
           :timeout)))
     :disconnected))
