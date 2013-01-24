@@ -8,19 +8,20 @@
         [overtone.helpers audio-file lib file]
         [overtone.sc.util :only [id-mapper]]))
 
-(defn- inactive-buffer-modification-error
+(defn- emit-inactive-buffer-modification-error
   "The default error behaviour triggered when a user attempts to work
    with an inactive buffer"
   [buf err-msg]
-  (condp = *inactive-buffer-modification-error*
-    :silent    nil ;;do nothing
-    :warning   (println "Warning - " err-msg buf " " (with-out-str (print buf)))
-    :exception (throw (Exception. (str "Error - " err-msg " " (with-out-str (print buf)))))
-    (throw
-     (IllegalArgumentException.
-      (str "Unexpected value for *inactive-buffer-modification-error*: "
-           *inactive-buffer-modification-error*
-           "Expected one of :silent, :warning, :exception.")))))
+  (let [ibme (inactive-buffer-modification-error)]
+    (condp = ibme
+      :silent    nil ;;do nothing
+      :warning   (println "Warning - " err-msg buf " " (with-out-str (print buf)))
+      :exception (throw (Exception. (str "Error - " err-msg " " (with-out-str (print buf)))))
+      (throw
+       (IllegalArgumentException.
+        (str "Unexpected value for overtone.sc.dyn-vars/*inactive-buffer-modification-error*"
+             ibme
+             "Expected one of :silent, :warning, :exception."))))))
 
 (defrecord BufferInfo [id size n-channels rate n-samples rate-scale duration]
   to-sc-id*
@@ -97,9 +98,10 @@
   data with the specified size and num-channels. Size will be
   automatically floored and converted to a Long - i.e. 2.7 -> 2"
   ([size] (buffer size 1 ""))
-  ([size num-channels-or-name] (if (string? num-channels-or-name)
-                                 (buffer 1 num-channels-or-name)
-                                 (buffer num-channels-or-name "")))
+  ([size num-channels-or-name]
+     (if (string? num-channels-or-name)
+       (buffer size 1 num-channels-or-name)
+       (buffer size num-channels-or-name "")))
   ([size num-channels name]
      (let [size (long size)
            id   (next-id :audio-buffer)
@@ -183,7 +185,7 @@
   ([buf err-msg]
      (when (and (buffer? buf)
                 (not (buffer-live? buf)))
-       (inactive-buffer-modification-error buf err-msg))))
+       (emit-inactive-buffer-modification-error buf err-msg))))
 
 (defn buffer-free
   "Synchronously free an audio buffer and the memory it was consuming."
@@ -191,10 +193,10 @@
   (assert (buffer? buf))
   (let [id (:id buf)]
     (with-server-self-sync (fn [uid]
-                             #(do (snd "/b_free" id)
-                                  (reset! (:status buf) :destroyed)
-                                  (server-sync uid)))
-      (str "whilst freeing audio buffer " buf))
+                             (snd "/b_free" id)
+                             (reset! (:status buf) :destroyed)
+                             (server-sync uid))
+      (str "whilst freeing audio buffer " (with-out-str (pr buf))))
     buf))
 
 (defn buffer-read

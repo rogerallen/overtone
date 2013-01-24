@@ -55,9 +55,8 @@
         key (uuid)]
     (on-event "/synced"
               (fn [msg] (when (= id (first (:args msg)))
-                         (do
-                           (handler-fn)
-                           :overtone/remove-handler)))
+                         (handler-fn)
+                         :overtone/remove-handler))
               key)
 
     (let [res (action-fn)]
@@ -102,9 +101,8 @@
            key  (uuid)]
        (on-event "/synced"
                  (fn [msg] (when (= id (first (:args msg)))
-                            (do
-                              (deliver prom true)
-                              :overtone/remove-handler)))
+                            (deliver prom true)
+                            :overtone/remove-handler))
                  key)
        (let [res (action-fn)]
          (server-snd "/sync" id)

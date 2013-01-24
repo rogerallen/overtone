@@ -6,7 +6,8 @@
         [overtone.sc.machinery allocator]
         [overtone.sc.machinery.server comms]
         [overtone.sc.util :only [id-mapper]]
-        [overtone.sc.defaults :only [foundation-groups* INTERNAL-POOL]])
+        [overtone.sc.defaults :only [foundation-groups* INTERNAL-POOL]]
+        [clojure.pprint])
   (:require [clojure.zip :as zip]
             [overtone.config.log :as log]
             [overtone.at-at :as at-at]))
@@ -14,22 +15,23 @@
 ; The root group is implicitly allocated
 (defonce _root-group_ (next-id :node))
 
-(defn- inactive-node-modification-error
+(defn- emit-inactive-node-modification-error
   "The default error behaviour triggered when a user attempts to either
   control or kill an inactive node."
   [node err-msg]
   (let [full-err-msg (str "inactive node modification attempted for node "
                           (with-out-str (pr node))
                           (when-not (empty? err-msg)
-                            (str " whilst " err-msg)))]
-    (condp = *inactive-node-modification-error*
+                            (str " whilst " err-msg)))
+        inme         (inactive-node-modification-error)]
+    (condp = inme
       :silent    nil ;;do nothing
       :warning   (println (str "Warning - " full-err-msg))
       :exception (throw (Exception. (str "Error - " full-err-msg)))
       (throw
        (IllegalArgumentException.
-        (str "Unexpected value for *inactive-node-modification-error*: "
-             *inactive-node-modification-error*
+        (str "Unexpected value for overtone.sc.dyn-vars/*inactive-node-modification-error*: "
+             inme
              ". Expected one of :silent, :warning, :exception."))))))
 
 (defonce ^{:private true} __PROTOCOLS__
@@ -226,8 +228,7 @@
 
      (when (and (node? node)
                 (not (node-active? node)))
-       (inactive-node-modification-error node err-msg))))
-
+       (emit-inactive-node-modification-error node err-msg))))
 
 (defn node-free*
   "Free the specified nodes on the server. The allocated id is
@@ -343,6 +344,7 @@
 
   ([name id position target]
      (ensure-connected!)
+     (ensure-node-active! target "using node as a target for a group")
      (when-not target
        (throw (IllegalArgumentException. (str "The target for this group must exist."))))
      (let [pos    (if (keyword? position) (get NODE-POSITION position) position)
@@ -508,10 +510,9 @@
 
 (defn node-block-until-ready*
   "Block the current thread until the node is no longer loading. This
-   behaviour can be disabled by binding the dynamic var
-   *block-node-until-ready?* to false."
+   behaviour can be disabled with the macro without-node-blocking"
   [node]
-  (when *block-node-until-ready?*
+  (when (block-node-until-ready?)
     (deref! (:loaded? node) (str
                              "blocking until the following node has completed loading: "
                              (with-out-str (pr node))))))
@@ -759,3 +760,7 @@
             (filter #(and (:name %)
                           (matcher-fn re-or-str (:name %)))
                     (node-tree-seq root))))))
+(defn pp-node-tree
+  "Pretty print the node tree to *out*"
+  ([] (pp-node-tree (:root-group @foundation-groups*)))
+  ([root] (pprint (node-tree root))))

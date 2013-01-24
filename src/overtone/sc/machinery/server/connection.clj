@@ -8,7 +8,7 @@
         [overtone.sc.machinery.server comms native args]
         [overtone.osc]
         [overtone.osc.decode :only [osc-decode-packet]]
-        [overtone.helpers.lib :only [print-ascii-art-overtone-logo windows-sc-path]]
+        [overtone.helpers.lib :only [print-ascii-art-overtone-logo windows-sc-path deref!]]
         [overtone.helpers.file :only [file-exists? dir-exists? resolve-tilde-path]]
         [overtone.helpers.system :only [windows-os? get-os linux-os?]])
   (:require [overtone.config.log :as log]))
@@ -54,7 +54,11 @@
    /n_move - a node was moved
    /n_info - in reply to /n_query"
   []
-  (server-snd "/notify" 1))
+  (let [notifications-enabled (server-recv "/done" (fn [msg]
+                                                     (= (first (:args msg))
+                                                        "/notify")))]
+    (server-snd "/notify" 1)
+    (deref! notifications-enabled "whilst turning server notifications on")))
 
 (defn- logged-sh
   "Run a shell command and log any errors. Returns stdout."
@@ -78,16 +82,16 @@
            system-outs    (re-seq #"system:playback_[0-9]*" port-list)
            interface-ins  (re-seq #"system:AC[0-9]*_dev[0-9]*_.*In.*" port-list)
            interface-outs (re-seq #"system:AP[0-9]*_dev[0-9]*_LineOut.*" port-list)
-           connections (partition 2 (concat
-                                     (interleave sc-outs system-outs)
-                                     (interleave sc-outs interface-outs)
-                                     (interleave system-ins sc-ins)
-                                     (interleave interface-ins sc-ins)))]
+           connections    (partition 2 (concat
+                                        (interleave sc-outs system-outs)
+                                        (interleave sc-outs interface-outs)
+                                        (interleave system-ins sc-ins)
+                                        (interleave interface-ins sc-ins)))]
        (doseq [[src dest] connections]
          (logged-sh "jack_connect" src dest)
          (log/info "jack_connect " src " " dest)))))
 
-(when (= :linux (get-os))
+(when (linux-os?)
   (on-deps :server-connected
            ::connect-jack-ports
            #(when (transient-server?)
@@ -98,17 +102,17 @@
 (defn- setup-connect-handlers []
   (let [handler-fn
         (fn [event-info]
+          (remove-handler ::connected-handler1)
+          (remove-handler ::connected-handler2)
           (dosync
            (ref-set connection-status* :connected))
           (server-notifications-on) ; turn on notifications now that we can communicate
           (satisfy-deps :server-connected)
           (event :connection-complete)
-          (remove-handler ::connected-handler1)
-          (remove-handler ::connected-handler2)
           (log/debug "Server connection established")
           (println "--> Connection established"))]
-    (on-sync-event "status.reply" handler-fn ::connected-handler1)
-    (on-sync-event "/status.reply" handler-fn ::connected-handler2)))
+    (oneshot-event "status.reply" handler-fn ::connected-handler1)
+    (oneshot-event "/status.reply" handler-fn ::connected-handler2)))
 
 (defn- connect-internal
   []
@@ -116,7 +120,7 @@
   (log/debug "Connecting to internal SuperCollider server")
   (let [send-fn (fn [peer-obj buffer]
                   (scsynth-send @sc-world* buffer))
-        peer (assoc (osc-peer false false) :send-fn send-fn)]
+        peer    (assoc (osc-peer false false) :send-fn send-fn)]
     (dosync (ref-set server-osc-peer* peer))
     (setup-connect-handlers)
     (server-snd "/status")))
@@ -211,8 +215,8 @@
   "Pull audio server log data from a pipe and store for later printing."
   [stream read-buf]
   (while (pos? (.available stream))
-    (let [n (min (count read-buf) (.available stream))
-          _ (.read stream read-buf 0 n)
+    (let [n   (min (count read-buf) (.available stream))
+          _   (.read stream read-buf 0 n)
           msg (String. read-buf 0 n)]
       (swap! external-server-log* conj msg)
       (log/info (String. read-buf 0 n)))))
@@ -262,26 +266,26 @@
   [args]
   (when (not= 1 (:realtime? args))
     (throw (Exception. "Non-realtime server mode not currently supported. Patches accepted - please contact the mailing list.")))
-  (let [udp?             (:udp? args)
-        port             (:port args)
-        ugens-paths      (or (:ugens-paths args) [])
-        args             (select-keys args (keys SC-ARG-INFO))
-        args             (dissoc args :udp? :port :realtime? :nrt-cmd-filename :nrt-output-filename :nrt-output-header-format :nrt-output-sample-format)
-        port-arg         (if (= 1 udp?)
-                           ["-u" port]
-                           ["-t" port])
-        ugens-paths      (map resolve-tilde-path ugens-paths)
-        ugens-paths      (filter dir-exists? ugens-paths)
-        ugens-paths      (apply str (interpose ":" ugens-paths))
-        args             (if (empty? ugens-paths)
-                           (dissoc args :ugens-paths)
-                           (assoc args :ugens-paths ugens-paths))
-        arg-list         (reduce
-                          (fn [res [flag val]] (if val
-                                                (concat res [(find-sc-arg-flag! flag) val])
-                                                res))
-                          []
-                          args)]
+  (let [udp?        (:udp? args)
+        port        (:port args)
+        ugens-paths (or (:ugens-paths args) [])
+        args        (select-keys args (keys SC-ARG-INFO))
+        args        (dissoc args :udp? :port :realtime? :nrt-cmd-filename :nrt-output-filename :nrt-output-header-format :nrt-output-sample-format)
+        port-arg    (if (= 1 udp?)
+                      ["-u" port]
+                      ["-t" port])
+        ugens-paths (map resolve-tilde-path ugens-paths)
+        ugens-paths (filter dir-exists? ugens-paths)
+        ugens-paths (apply str (interpose ":" ugens-paths))
+        args        (if (empty? ugens-paths)
+                      (dissoc args :ugens-paths)
+                      (assoc args :ugens-paths ugens-paths))
+        arg-list    (reduce
+                     (fn [res [flag val]] (if val
+                                           (concat res [(find-sc-arg-flag! flag) val])
+                                           res))
+                     []
+                     args)]
     (map str (concat port-arg arg-list))))
 
 (defn- sc-command
@@ -380,9 +384,9 @@
      (unsatisfy-all-dependencies))))
 
 (defonce _shutdown-hook
-     (.addShutdownHook (Runtime/getRuntime)
-                       (Thread. (fn []
-                                  (log/info "Shutdown hook activated...")
-                                  (locking connection-info*
-                                    (when (= :connected @connection-status*)
-                                      (shutdown-server)))))))
+  (.addShutdownHook (Runtime/getRuntime)
+                    (Thread. (fn []
+                               (log/info "Shutdown hook activated...")
+                               (locking connection-info*
+                                 (when (= :connected @connection-status*)
+                                   (shutdown-server)))))))
