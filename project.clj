@@ -39,7 +39,7 @@
        (vec (set (concat (get JVMOPTS :any)
                          (get JVMOPTS os))))))
 
-(defproject overtone "0.8.0-RC20"
+(defproject overtone "0.9.0-SNAPSHOT"
   :description "Collaborative Programmable Music. (http://overtone.github.com)"
   :url "http://overtone.github.com/"
   :dependencies [[org.clojure/clojure "1.3.0"]
@@ -58,5 +58,8 @@
                  [seesaw "1.4.2"]]
   :profiles {:test {:dependencies [[bultitude "0.2.0"]
                                    [polynome "0.2.2"]]}}
+  :test-selectors {:core (fn [m] (not (some m [:gui :hw])))
+                   :gui  :gui
+                   :hw   :hw}
   :native-path "native"
   :jvm-opts ~(jvm-opts))
