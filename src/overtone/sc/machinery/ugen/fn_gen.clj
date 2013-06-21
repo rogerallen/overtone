@@ -69,7 +69,7 @@
                           [gcount
                            (conj seqs (repeat arg))
                            (next flags)]))
-          [greatest-count seqs] (reduce gc-seqs [1 [] expand-flags] args)]
+          [greatest-count seqs _] (reduce gc-seqs [1 [] expand-flags] args)]
       (take greatest-count (parallel-seqs seqs)))))
 
 (defn mk-scugen
@@ -161,17 +161,19 @@
 
 (defn mk-generic-control-ugen
   [name rate n-outputs offset]
-  (with-meta {:id (next-id ::ugen)
-              :name name
-              :rate (rate RATES)
+  (with-meta {:id        (next-id ::ugen)
+              :name      name
+              :rate      (rate RATES)
               :rate-name (REVERSE-RATES (rate RATES))
-              :special offset
-              :args nil
+              :special   offset
+              :args      nil
               :n-outputs n-outputs
-              :outputs (repeat n-outputs {:rate (rate RATES)})
-              :n-inputs 0
-              :inputs []}
-    {:type ::ugen}))
+              :outputs   (repeat n-outputs {:rate (rate RATES)})
+              :n-inputs  0
+              :inputs    []}
+    {:type ::control-ugen}))
+
+(derive ::control-ugen ::ugen)
 
 (defn control-ugen
   "Creates a new control ugen at control rate.

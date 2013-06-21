@@ -46,12 +46,7 @@
     (throw (Exception. (str "Sorry, it's only possible to use scopes with an internal server. Your server connection info is as follows: " (connection-info))))))
 
 (defn- update-scope-data
-  "Updates the scope by reading the current status of the buffer and repainting.
-  Currently only updates bus scope as there's a bug in scsynth-jna which
-  crashes the server after too many calls to buffer-data for a large
-  buffer. As buffers tend to be large, updating the scope frequently
-  will cause the crash to happen sooner. Need to remove this limitation
-  when scsynth-jna is fixed."
+  "Updates the scope by reading the current status of the buffer and repainting."
   [s]
 
   (let [{:keys [buf size width height panel y-arrays x-array panel]} s
@@ -79,14 +74,15 @@
 (defn- paint-scope [^Graphics g id]
   (if-let [scope (get @scopes* id)]
     (let [{:keys [background width height color x-array y-arrays slider]} scope
-          s-val (.getValue slider)
-          y-zoom (if (> s-val 49)
-                   (+ 1 (* 0.1 (- s-val 50)))
-                   (+ (* 0.02 s-val) 0.01))
-          y-shift (+ (/ height 2.0) Y-PADDING)
+          s-val     (.getValue slider)
+          y-zoom    (if (> s-val 49)
+                      (+ 1 (* 0.1 (- s-val 50)))
+                      (+ (* 0.02 s-val) 0.01))
+          y-shift   (+ (/ height 2.0) Y-PADDING)
           [y-a y-b] @y-arrays]
       (doto g
-        (.setRenderingHint RenderingHints/KEY_ANTIALIASING RenderingHints/VALUE_ANTIALIAS_ON)
+        (.setRenderingHint RenderingHints/KEY_ANTIALIASING
+                           RenderingHints/VALUE_ANTIALIAS_ON)
         (.setColor ^Color background)
         (.fillRect 0 0 width height)
         (.setColor ^Color (Color. 100 100 100))
@@ -106,8 +102,8 @@
   "Display scope window. If you specify keep-on-top to be true, the
   window will stay on top of the other windows in your environment."
   ([panel slider title keep-on-top width height]
-     (let [f (JFrame. title)
-           cp (.getContentPane f)
+     (let [f    (JFrame. title)
+           cp   (.getContentPane f)
            side (JPanel. (BorderLayout.))]
        (.add side slider BorderLayout/CENTER)
        (doto cp
@@ -158,8 +154,8 @@
 (defn- start-bus-synth
   [bus buf control-rate?]
   (if control-rate?
-    (control-bus->buf :target @scope-group* bus buf)
-    (bus->buf :target @scope-group* bus buf)))
+    (control-bus->buf [:tail @scope-group*] bus buf)
+    (bus->buf [:tail @scope-group*] bus buf)))
 
 (defn- scope-bus
   "Set a bus to view in the scope."
@@ -191,11 +187,11 @@
 
 (defn- start-bus-freq-synth
   [bus buf]
-  (bus-freqs->buf :target @scope-group* bus buf))
+  (bus-freqs->buf [:tail @scope-group*] bus buf))
 
 (defn- scope-bus-freq
   [s]
-  (let [buf (buffer SCOPE-BUF-SIZE)
+  (let [buf       (buffer SCOPE-BUF-SIZE)
         bus-synth (start-bus-freq-synth (:thing s) buf)]
     (assoc s
       :size SCOPE-BUF-SIZE

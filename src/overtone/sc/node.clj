@@ -83,7 +83,9 @@
          the groups and synths contained within it.
 
          Low-level functionality. See node-tree for something more
-         usable." ))))
+         usable." )
+      (group-free [group]
+        "Destroys this group and any containing synths or subgroups."))))
 
 (extend-type java.lang.Long to-sc-id*    (to-sc-id [v] v))
 (extend-type java.lang.Integer to-sc-id* (to-sc-id [v] v))
@@ -128,7 +130,11 @@
                  (let [val (to-id val)
                        val (to-float val)]
                    (when (not (float? val))
-                     (throw (IllegalArgumentException. (str "Incorrect arg. Was expecting a float and found " val ". Full arg map: " arg-map))))
+                     (throw (IllegalArgumentException.
+                             (str "Incorrect arg. Was expecting a float and found "
+                                  (with-out-str (pr val))
+                                  ". Full arg map: "
+                                  (with-out-str (pr arg-map))))))
                    val))]
 
     (zipmap (map name-fn (keys arg-map))
@@ -249,7 +255,9 @@
   (let [snode (get @active-synth-nodes* id)]
     (log/debug (format "node-destroyed: %d - synth-node: %s" id snode))
     (if snode
-      (reset! (:status snode) :destroyed)
+      (do
+        (reset! (:status snode) :destroyed)
+        (event [:overtone :node-destroyed (:id snode)] {:node snode}))
       (log/warn (format "ERROR: The fn node-destroyed can't find synth node: %d" id)))
     (swap! active-synth-nodes* dissoc id)))
 
@@ -261,6 +269,7 @@
     (if snode
       (do
         (reset! (:status snode) :live)
+        (event [:overtone :node-created (:id snode)] {:node snode})
         (deliver (:loaded? snode) true))
       (log/warn (format "ERROR: The fn node-created can't find synth node: %d" id)))))
 
@@ -270,7 +279,9 @@
   (let [snode (get @active-synth-nodes* id)]
     (log/debug (format "node-paused: %d\nsynth-node: %s" id snode))
     (if snode
-      (reset! (:status snode) :paused)
+      (do
+        (reset! (:status snode) :paused)
+        (event [:overtone :node-paused (:id snode)] {:node snode}))
       (log/warn (format "ERROR: The fn node-paused can't find synth node: %d" id)))))
 
 (defn- node-started
@@ -279,8 +290,82 @@
   (let [snode (get @active-synth-nodes* id)]
     (log/debug (format "node-started: %d\nsynth-node: %s" id snode))
     (if snode
-      (reset! (:status snode) :live)
+      (do
+        (reset! (:status snode) :live)
+        (event [:overtone :node-started (:id snode)] {:node snode}))
       (log/warn (format "ERROR: The fn node-started can't find synth node: %d" id)))))
+
+(defn node-destroyed-event-key
+  "Returns the key used for node destroyed events"
+  [node]
+  [:overtone :node-destroyed (to-sc-id node)])
+
+(defn node-created-event-key
+  "Returns the key used for node created events"
+  [node]
+  [:overtone :node-created (to-sc-id node)])
+
+(defn node-paused-event-key
+  "Returns the key used for node paused events"
+  [node]
+  [:overtone :node-paused (to-sc-id node)])
+
+(defn node-started-event-key
+  "Returns the key used for node started events"
+  [node]
+  [:overtone :node-started (to-sc-id node)])
+
+(defn on-node-destroyed
+  "Creates a oneshot event handler which will be triggered when node is
+   destroyed. Returns event handler key."
+  [node f]
+  (let [k  (uuid)
+        id (to-sc-id node)]
+    (oneshot-event (node-destroyed-event-key id)
+                   f
+                   id)
+    k))
+
+(defn on-node-created
+  "Creates a oneshot event handler which will be triggered when node is
+   created. Returns event handler key."
+  [node f]
+  (let [k  (uuid)
+        id (to-sc-id node)]
+    (oneshot-event (node-created-event-key id)
+                   f
+                   id)
+    k))
+
+(defn on-node-paused
+  "Creates a recurring event handler which will be triggered when node
+   is paused. This on-pause handler is automatically removed when node
+   is destroyed. Returns on-pause handler key."
+  [node f]
+  (let [k  (uuid)
+        id (to-sc-id node)]
+    (on-event (node-paused-event-key id)
+                   f
+                   id)
+    (oneshot-event (node-destroyed-event-key id)
+                   #(remove-handler k)
+                   (uuid))
+    k))
+
+(defn on-node-started
+  "Creates a recurring event handler which will be triggered when node
+   is paused. This on-started handler is automatically removed when node
+   is destroyed. Returns on-started handler key."
+  [node f]
+  (let [k  (uuid)
+        id (to-sc-id node)]
+    (on-event (node-started-event-key id)
+                   f
+                   id)
+    (oneshot-event (node-destroyed-event-key id)
+                   #(remove-handler k)
+                   (uuid))
+    k))
 
 ;; Setup the feedback handlers with the audio server.
 (on-event "/n_end" (fn [info] (node-destroyed (first (:args info)))) ::node-destroyer)
@@ -357,9 +442,9 @@
 
 (defn- group-free*
   "Free synth groups, releasing their resources."
-  [& group-ids]
+  [group-id]
   (ensure-connected!)
-  (apply node-free group-ids))
+  (node-free group-id))
 
 (defn node-pause*
   "Pause a running synth node."
@@ -561,6 +646,13 @@
    :node-block-until-ready node-block-until-ready*})
 
 (extend SynthGroup
+  ISynthNode
+  {:node-free  node-free*
+   :node-pause node-pause*
+   :node-start node-start*
+   :node-place node-place*}
+
+
   IControllableNode
   {:node-control           node-control*
    :node-control-range     node-control-range*
@@ -584,26 +676,16 @@
       (node-control n args))
     (node-control node args)))
 
-
-
 (defn kill
-  "Free one or more synth nodes.
-  Functions that create instance of synth definitions, such as hit,
-  return a handle for the synth node that was created.
-  (let [handle (hit :sin)] ; returns => synth-handle
-  (kill (+ 1000 (now)) handle))
+  "Multi-purpose killing function.
 
-  ; a single handle without a time kills immediately
-  (kill handle)
-
-  ; or a bunch of synth handles can be removed at once
-  (kill (hit) (hit) (hit))
-
-  ; or a seq of synth handles can be removed at once
-  (kill [(hit) (hit) (hit)])
-  "
+  * running synths - Stop and removes the node from the node
+                     tree.
+  * groups         - Stops all synths within the group (and
+                     subgroups) but will leave the group structure
+                     intact.
+"
   [& nodes]
-  (ensure-connected!)
   (doseq [node (flatten nodes)]
     (kill* node)))
 
@@ -711,7 +793,8 @@
    :group-clear        group-clear*
    :group-deep-clear   group-deep-clear*
    :group-post-tree    group-post-tree*
-   :group-node-tree    group-node-tree*}
+   :group-node-tree    group-node-tree*
+   :group-free         group-free*}
 
   IKillable
   {:kill* group-deep-clear*})
@@ -724,7 +807,8 @@
    :group-clear        group-clear*
    :group-deep-clear   group-deep-clear*
    :group-post-tree    group-post-tree*
-   :group-node-tree    group-node-tree*})
+   :group-node-tree    group-node-tree*
+   :group-free         group-free*})
 
 (defn node-tree
   "Returns a data representation of the synth node tree starting at

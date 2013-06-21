@@ -1,10 +1,11 @@
 (ns
-  ^{:doc "Functions to help manage and structure computation in time."
-     :author "Jeff Rose and Sam Aaron"}
+    ^{:doc "Functions to help manage and structure computation in time."
+      :author "Jeff Rose and Sam Aaron"}
   overtone.music.time
   (:use [overtone.libs event]
         [overtone.helpers lib])
-  (:require [overtone.at-at :as at-at]))
+  (:require [overtone.at-at :as at-at]
+            [overtone.sc.node :as node]))
 
 ;;Scheduled thread pool (created by at-at) which is to be used by default for
 ;;all scheduled musical functions (players).
@@ -78,14 +79,42 @@
   300)
 
 (defn apply-by
-  "Recursion in Time. Calls (apply f args argseq) *apply-ahead* ms
-  before ms-time.
+  "Ahead-of-schedule function appliction. Works identically to
+   apply, except that it takes an additional initial argument:
+   ms-time. If ms-time is in the future, function application is delayed
+   until *apply-ahead* ms before that time, if ms-time is in the past
+   function application is immediate.
 
-  By passing a function using #'foo syntax instead of just foo, when
-  later called by the scheduler it will lookup based on the symbol
-  rather than using the instance of the function defined earlier.
+   If you wish to apply at a specific time rather than slightly before
+   it, see apply-at.
 
-  (apply-by (+ dur (now)) #'my-melody arg1 arg2 [])"
+   Can be used to implement the 'temporal recursion' pattern. This is
+   where a function has a call to apply-by at its tail:
+
+   (defn foo
+     [t freq]
+     (at t (my-synth freq))
+     (let [next-t (+ t 200)
+           next-f (+ freq 100]
+       (apply-by next-t #'foo [next-t next-f])))
+
+   (foo (now) 100)
+
+   The fn foo is written in a recursive style, yet the recursion is
+   scheduled for application 200ms in the future. By passing a function
+   using #'foo syntax instead of the symbole foo, when later called by
+   the scheduler it will lookup based on the symbol rather than using
+   the instance of the function defined earlier. This allows us to
+   redefine foo whilst the temporal recursion is continuing to execute.
+
+   Note that by using apply-by, we can schedule events to happen at
+   exactly time t within the body of the fn, as the scheduled recursion
+   of the fn itself happens ahead of t. apply-by is therefore typically
+   used in conjunction with the at macro for scheduling SuperCollider
+   server events.
+
+   To stop an executing temporal recursion pattern, either redefine the
+   function to not call itself, or use (stop)."
   {:arglists '([ms-time f args* argseq])}
   [#^clojure.lang.IFn ms-time f & args]
   (let [delay-time (- ms-time *apply-ahead* (now))]
@@ -94,13 +123,34 @@
       (after-delay delay-time #(apply f (#'clojure.core/spread args))))))
 
 (defn apply-at
-  "Recursion in Time. Calls (apply f args argseq) exactly at time
+  "Scheduled function appliction. Works identically to apply, except
+   that it takes an additional initial argument: ms-time. If ms-time is
+   in the future, function application is delayed until that time, if
+   ms-time is in the past function application is immediate.
 
-  By passing a function using #'foo syntax instead of just foo, when
-  later called by the scheduler it will lookup based on the symbol
-  rather than using the instance of the function defined earlier.
+   If you wish to apply slightly before specific time rather than
+   exactly at it, see apply-by.
 
-  (apply-at (+ dur (now)) #'my-melody arg1 arg2 [])"
+   Can be used to implement the 'temporal recursion' pattern. This is
+   where a function has a call to apply-at at its tail:
+
+   (defn foo
+     [t val]
+     (println val)
+     (let [next-t (+ t 200)]
+       (apply-at next-t #'foo [next-t (inc val)])))
+
+   (foo (now) 0) ;=> 0, 1, 2, 3...
+
+   The fn foo is written in a recursive style, yet the recursion is
+   scheduled for application 200ms in the future. By passing a function
+   using #'foo syntax instead of the symbole foo, when later called by
+   the scheduler it will lookup based on the symbol rather than using
+   the instance of the function defined earlier. This allows us to
+   redefine foo whilst the temporal recursion is continuing to execute.
+
+   To stop an executing temporal recursion pattern, either redefine the
+   function to not call itself, or use (stop)."
   {:arglists '([ms-time f args* argseq])}
   [#^clojure.lang.IFn ms-time f & args]
   (let [delay-time (- ms-time (now))]
@@ -112,3 +162,10 @@
   "Print the schedule of currently running audio players."
   []
   (at-at/show-schedule player-pool))
+
+(extend-protocol node/IKillable
+  overtone.at_at.RecurringJob
+  (kill* [job] (stop-player job))
+
+  overtone.at_at.ScheduledJob
+  (kill* [job] (stop-player job)))

@@ -137,9 +137,8 @@
   [ugens constants grouped-params]
   (let [constants (map float constants)
         outs  (map with-outputs ugens)
-        ins   (map #(with-inputs %1 outs constants grouped-params) outs)
-        final (map #(assoc %1 :args nil) ins)]
-    (doall final)))
+        ins   (map #(with-inputs %1 outs constants grouped-params) outs)]
+    (doall ins)))
 
 (defn- make-control-ugens
   "Controls are grouped by rate, so that a single Control ugen
@@ -481,22 +480,38 @@
 (defn synth-player
   [sdef params this & args]
     "Returns a player function for a named synth.  Used by (synth ...)
-    internally, but can be used to generate a player for a
-    pre-compiled synth.  The function generated will accept two
-    optional arguments that must come first, the :position
-    and :target (see the node function docs).
+    internally, but can be used to generate a player for a pre-compiled
+    synth.  The function generated will accept a target and position
+    vector of two values that must come first (see the node function
+    docs).
 
+    ;; call foo player with default args:
     (foo)
-    (foo :position :tail :target 0)
 
-    or if foo has two arguments:
+    ;; call foo player specifyign node should be at the tail of group 0
+    (foo [:tail 0])
+
+    ;; call foo player with positional arguments
     (foo 440 0.3)
-    (foo :position :tail :target 0 440 0.3)
-    at the head of group 2:
-    (foo :position :head :target 2 440 0.3)
 
-    These can also be abbreviated:
-    (foo :tgt 2 :pos :head)
+    ;; target node to be at the tail of group 0 with positional args
+    (foo [:tail 0] 440 0.3)
+
+    ;; or target node to be at the head of group 2
+    (foo [:head 2] 440 0.3)
+
+    ;; you may also use keyword args
+    (foo :freq 440 :amp 0.3)
+
+    ;; which allows you to re-order the args
+    (foo :amp 0.3 :freq 440 )
+
+    ;; you can also combine a target vector with keyword args
+    (foo [:head 2] :amp 0.3 :freq 440)
+
+    ;; finally, you can combine target vector, keywords args and
+    ;; positional args. Positional args must go first.
+    (foo [:head 2] 440 :amp 0.3)
     "
     (let [arg-names         (map keyword (map :name params))
           args              (or args [])
@@ -539,19 +554,18 @@
   "
   [& args]
   `(let [[sname# params# ugens# constants#] (pre-synth ~@args)
-         sdef# (synthdef sname# params# ugens# constants#)
-         arg-names# (map :name params#)
+         sdef#             (synthdef sname# params# ugens# constants#)
+         arg-names#        (map :name params#)
          params-with-vals# (map #(assoc % :value (atom (:default %))) params#)
-         instance-fn# (apply comp (map :instance-fn (filter :instance-fn (map meta ugens#))))
+         instance-fn#      (apply comp (map :instance-fn (filter :instance-fn (map meta ugens#))))
          smap# (with-meta
                  (map->Synth
                   {:name sname#
-                   :ugens ugens#
                    :sdef sdef#
                    :args arg-names#
                    :params params-with-vals#
                    :instance-fn instance-fn#})
-                 {:overtone.live/to-string #(str (name (:type %)) ":" (:name %))})]
+                 {:overtone.live/to-string #(str (name (:type %)) ":" (:name %))})] ;; TODO what on earth is this?
      (load-synthdef sdef#)
      (event :new-synth :synth smap#)
      smap#))
@@ -598,19 +612,37 @@
     \"The phatest space pad ever!\"
     [] (...))
 
-  The function generated will accept two optional arguments that must
-  come first, the :position and :target (see the node function docs).
+  The function generated will a target vector argument that must come
+  first containing position and target as elements (see the node
+  function docs).
+
+  ;; call foo player with default args:
   (foo)
-  (foo :position :tail :target 0)
 
-  Or if foo has two arguments:
+  ;; call foo player specifyign node should be at the tail of group 0
+  (foo [:tail 0])
+
+  ;; call foo player with positional arguments
   (foo 440 0.3)
-  (foo :position :tail :target 0 440 0.3)
-  at the head of group 2:
-  (foo :position :head :target 2 440 0.3)
 
-  These can also be abbreviated:
-  (foo :tgt 2 :pos :head)"
+  ;; target node to be at the tail of group 0 with positional args
+  (foo [:tail 0] 440 0.3)
+
+  ;; or target node to be at the head of group 2
+  (foo [:head 2] 440 0.3)
+
+  ;; you may also use keyword args
+  (foo :freq 440 :amp 0.3)
+
+  ;; which allows you to re-order the args
+  (foo :amp 0.3 :freq 440 )
+
+  ;; you can also combine a target vector with keyword args
+  (foo [:head 2] :amp 0.3 :freq 440)
+
+  ;; finally, you can combine target vector, keywords args and
+  ;; positional args. Positional args must go first.
+  (foo [:head 2] 440 :amp 0.3)"
   [s-name & s-form]
   {:arglists '([name doc-string? params ugen-form])}
   (let [[s-name params ugen-form] (synth-form s-name s-form)]

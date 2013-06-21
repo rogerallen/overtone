@@ -98,15 +98,13 @@
         out-mixers (doall
                     (map
                      (fn [out-bus]
-                       (out-bus-mixer :pos :head
-                                      :target (foundation-output-group)
+                       (out-bus-mixer [:head (foundation-output-group)]
                                       :out-bus out-bus))
                      (range out-cnt)))
         in-mixers  (doall
                     (map
                      (fn [in-bus]
-                       (in-bus-mixer :pos :head
-                                     :target (foundation-input-group)
+                       (in-bus-mixer [:head (foundation-input-group)]
                                      :in-bus (+ out-cnt in-bus)))
                      (range in-cnt)))]
 
@@ -157,7 +155,7 @@
 
   (let [path (resolve-tilde-path path)
         bs   (apply buffer-stream path args)
-        rec  (master-recorder :target (foundation-monitor-group) bs)]
+        rec  (master-recorder [:tail (foundation-monitor-group)] bs)]
     (swap! studio* assoc :recorder {:rec-id rec
                                     :buf-stream bs})
     :recording-started))

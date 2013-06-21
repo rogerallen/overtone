@@ -127,6 +127,11 @@
 
 (defn synthdef? [obj] (= ::synthdef (type obj)))
 
+(defn ensure-synthdef!
+  [obj]
+  (when-not (synthdef? obj)
+    (throw (IllegalArgumentException. (str "Error, was expecting a synthdef, found: " (type obj))))))
+
 (defn- supercollider-synthdef-path
   "Returns a constructed path to a named synthdef on the current platform"
   [synth-name]
@@ -135,24 +140,27 @@
                 synth-name
                 ".scsyndef")))
 
-; TODO: byte array shouldn't really be the default here, but I don't
-; know how to test for one correctly... (byte-array? data) please?
+;; TODO: byte array shouldn't really be the default here, but I don't
+;; know how to test for one correctly... (byte-array? data) please?
 (defn synthdef-read
   "Reads synthdef data from either a file specified using a string path
   a URL, or a byte array."
   [data]
-  (first (:synths
-          (cond
-           (keyword? data) (spec-read-url synthdef-file-spec (java.net.URL. (str "file:" (supercollider-synthdef-path (to-str data)))) )
-           (string? data) (spec-read-url synthdef-file-spec (java.net.URL. (str "file:" (resolve-tilde-path data))))
-           (instance? java.net.URL data) (spec-read-url synthdef-file-spec data)
-           (byte-array? data) (spec-read-bytes synthdef-file-spec data)
-           :default (throw (IllegalArgumentException. (str "synthdef-read expects either a string, a URL, or a byte-array argument.")))))))
+  (with-meta
+    (first (:synths
+            (cond
+             (keyword? data) (spec-read-url synthdef-file-spec (java.net.URL. (str "file:" (supercollider-synthdef-path (to-str data)))) )
+             (string? data) (spec-read-url synthdef-file-spec (java.net.URL. (str "file:" (resolve-tilde-path data))))
+             (instance? java.net.URL data) (spec-read-url synthdef-file-spec data)
+             (byte-array? data) (spec-read-bytes synthdef-file-spec data)
+             :default (throw (IllegalArgumentException. (str "synthdef-read expects either a string, a URL, or a byte-array argument."))))))
+    {:type ::imported-synthdef}))
 
 (defn synthdef-write
   "Write a synth definition to a new file at the given path, which includes
   the name of the file itself.  (e.g. /home/rosejn/synths/bass.scsyndef)"
   [sdef path]
+  (ensure-synthdef! sdef)
   (let [path (resolve-tilde-path path)]
     (spec-write-file synthdef-file-spec (synthdef-file sdef) path)))
 
@@ -160,6 +168,7 @@
   "Produces a serialized representation of the synth definition understood
   by SuperCollider, and returns it in a byte array."
   [sdef]
+  (ensure-synthdef! sdef)
   (spec-write-bytes synthdef-file-spec
     (cond
       (synthdef? sdef) (synthdef-file sdef)
@@ -187,6 +196,7 @@
     (synthdef-print synth)))
 
 (defn synthdef-print [s]
+  (ensure-synthdef! s)
   (println
     "  name: "          (:name s)
     "\n  n-constants: " (:n-constants s)
@@ -203,6 +213,7 @@
   "Returns the set of control parameter name/default-value pairs for a synth
   definition."
   [sdef]
+  (ensure-synthdef! sdef)
   (let [names (map #(keyword (:name %1)) (:pnames sdef))
         vals (:params sdef)]
   (apply hash-map (interleave names vals))))
@@ -221,7 +232,7 @@
   synthdef loading is delayed until the server has succesfully
   connected."
   [sdef]
-  (assert (synthdef? sdef))
+  (ensure-synthdef! sdef)
   (dosync (alter loaded-synthdefs* assoc (:name sdef) sdef))
 
   (when (server-connected?)

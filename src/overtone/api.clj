@@ -4,17 +4,18 @@
   (:require clojure.stacktrace
             [overtone.config store]
             [overtone version midi osc speech]
-            [overtone.algo chance scaling trig]
+            [overtone.algo chance scaling trig fn]
             [overtone.sc bindings buffer bus envelope example info
                          ugens defcgen node sample server synth
-                         foundation-groups dyn-vars]
+                         foundation-groups dyn-vars trig]
             [overtone.sc.cgens oscillators demand mix io buf-io env tap
                                line freq beq-suite berlach bhob info]
             [overtone.music rhythm pitch tuning time]
             [overtone.studio mixer inst util fx wavetable midi core]
-            [overtone.repl ugens examples shell inst debug]
-            [overtone.libs asset event freesound]
-            [overtone.gui scope mixer control]))
+            [overtone.repl ugens examples shell inst debug graphviz]
+            [overtone.libs asset event]
+            [overtone.gui scope mixer control]
+            [overtone.samples freesound]))
 
 (defn immigrate-overtone-api []
   (immigrate
@@ -23,6 +24,7 @@
    'overtone.algo.chance
    'overtone.algo.scaling
    'overtone.algo.trig
+   'overtone.algo.fn
    'overtone.config.store
    'overtone.sc.bindings
    'overtone.sc.buffer
@@ -38,6 +40,7 @@
    'overtone.sc.defcgen
    'overtone.sc.foundation-groups
    'overtone.sc.dyn-vars
+   'overtone.sc.trig
    'overtone.sc.cgens.oscillators
    'overtone.sc.cgens.demand
    'overtone.sc.cgens.mix
@@ -67,7 +70,8 @@
    'overtone.repl.shell
    'overtone.repl.inst
    'overtone.repl.debug
+   'overtone.repl.graphviz
    'overtone.libs.asset
    'overtone.libs.event
-   'overtone.libs.freesound
+   'overtone.samples.freesound
    'overtone.version))

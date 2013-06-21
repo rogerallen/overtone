@@ -67,7 +67,7 @@
   (ensure-node-active! inst)
   (let [fx-group (:fx-group inst)
         bus      (:bus inst)
-        fx-id    (fx :tgt fx-group :pos :tail :bus bus)]
+        fx-id    (fx [:tail fx-group] :bus bus)]
     fx-id))
 
 (defmethod inst-fx! :stereo
@@ -76,8 +76,8 @@
   (let [fx-group (:fx-group inst)
         bus-l    (to-sc-id (:bus inst))
         bus-r    (inc bus-l)
-        fx-ids   [(fx :tgt fx-group :pos :tail :bus bus-l)
-                  (fx :tgt fx-group :pos :tail :bus bus-r)]]
+        fx-ids   [(fx [:tail fx-group] :bus bus-l)
+                  (fx [:tail fx-group] :bus bus-r)]]
     fx-ids))
 
 (defn clear-fx
@@ -114,13 +114,13 @@
               n-chans#
               inst-bus#]))))))
 
-(defrecord-ifn Inst [name params args ugens sdef
+(defrecord-ifn Inst [name params args sdef
                      group instance-group fx-group
                      mixer bus fx-chain
                      volume pan
                      n-chans]
   (fn [this & args]
-    (apply synth-player sdef params this :tgt instance-group args))
+    (apply synth-player sdef params this [:tail instance-group] args))
 
   to-sc-id*
   (to-sc-id [_] (to-sc-id instance-group)))
@@ -157,8 +157,7 @@
 
          imixer#    (or (:mixer new-inst#)
                         (inst-mixer n-chans#
-                                    :tgt container-group#
-                                    :pos :tail
+                                    [:tail container-group#]
                                     :in-bus inst-bus#))
          sdef#      (synthdef sname# params# ugens# constants#)
          arg-names# (map :name params#)
@@ -167,7 +166,7 @@
          volume#    (atom DEFAULT-VOLUME)
          pan#       (atom DEFAULT-PAN)
          inst#      (with-meta
-                      (Inst. sname# params-with-vals# arg-names# ugens# sdef#
+                      (Inst. sname# params-with-vals# arg-names# sdef#
                              container-group# instance-group# fx-group#
                              imixer# inst-bus# fx-chain#
                              volume# pan#

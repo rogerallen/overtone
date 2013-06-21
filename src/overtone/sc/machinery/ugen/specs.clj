@@ -203,11 +203,18 @@
     ;;simply return the ugen if there's no problem with rates
     ugen))
 
+(defn- ensure-num-out-arg-is-number!
+  [val ug]
+  (when-not (number? val)
+    (throw (IllegalArgumentException. (str "Argument for ugen " (:name ug) " must be a number, yet found: " (with-out-str (pr val)))))))
+
 (defn- with-num-outs-mode [spec ugen]
   (let [args-specs    (args-with-specs (:args ugen) spec :mode)
         [args n-outs] (reduce (fn [[args n-outs] [arg mode]]
                                 (if (= :num-outs mode)
-                                  [args arg]
+                                  (do
+                                    (ensure-num-out-arg-is-number! arg ugen)
+                                    [args arg])
                                   [(conj args arg) n-outs]))
                               [[] (:n-outputs ugen)]
                               args-specs)]
@@ -224,6 +231,12 @@
         arg-list    (vec (map arg-map arg-names))]
     (assoc ugen :args arg-list :arg-map arg-map :orig-args args)))
 
+(defn ugen-sequence-mode?
+  [mode]
+  (or (= :append-sequence mode)
+      (= :append-sequence-set-num-outs mode)
+      (= :append-string mode)))
+
 (defn- append-seq-args
   "Handles argument modes :append-sequence and :append-sequence-set-num-outs,
   and :append-string  where some ugens take a seq or string for one argument
@@ -231,9 +244,7 @@
   (and in the case of strings need to be converted to a list of char ints)"
   [spec ugen]
   (let [args-specs     (args-with-specs (:args ugen) spec :mode)
-        pred           #(or (= :append-sequence (second %))
-                            (= :append-sequence-set-num-outs (second %))
-                            (= :append-string (second %)))
+        pred           #(ugen-sequence-mode? (second %))
         normal-args    (map first (remove pred args-specs))
         to-append      (filter pred args-specs)
         intify-strings (map (fn [[arg spec]]
@@ -512,3 +523,5 @@
 
 (defn get-ugen [word]
   (get UGEN-SPECS (normalize-ugen-name word)))
+
+(def get-ugen-spec get-ugen)

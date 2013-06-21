@@ -17,7 +17,7 @@
   (do
     (defsynth mono-player
       "Plays a single channel audio buffer."
-      [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 out-bus 0 ]
+      [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 out-bus 0]
       (out out-bus (* vol
                       (pan2
                        (scaled-play-buf 1 buf rate
@@ -166,9 +166,12 @@
 
 (defn sample-player
   "Play the specified sample with either a mono or stereo player
-   depending on the number of channels in the sample. Accepts same args
-   as both players, namely: [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol
-   1]"
+   depending on the number of channels in the sample. Always creates a
+   stereo signal.
+
+   Accepts same args as both players, namely:
+
+   [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 out-bus 0]"
   [smpl & pargs] {:pre [(sample? smpl)]}
   (let [{:keys [path args]}     smpl
         {:keys [id n-channels]} (get @cached-samples* [path args])
@@ -176,8 +179,8 @@
                                                                (foundation-default-group)
                                                                :tail)]
     (cond
-      (= n-channels 1) (apply mono-player :tgt target :pos pos id pargs)
-      (= n-channels 2) (apply stereo-player :tgt target :pos pos id pargs))))
+      (= n-channels 1) (apply mono-player [pos target] id pargs)
+      (= n-channels 2) (apply stereo-player [pos target] id pargs))))
 
 (defrecord-ifn PlayableSample
   [id size n-channels rate status path args name]
@@ -217,5 +220,11 @@
 (derive ::sample :overtone.sc.buffer/file-buffer)
 (derive ::playable-sample ::sample)
 
-(defmacro defsample [s-name path & args]
+(defmacro defsample
+  "Define a s-name as a var in the current namespace referencing a
+   sample with the specified path and args.
+
+   Equivalent to:
+   (def s-name (sample path args...))"
+  [s-name path & args]
   `(def ~s-name (sample ~path ~@args)))

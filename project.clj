@@ -46,7 +46,7 @@
                  [org.clojure/core.incubator "0.1.0"]
                  [org.clojure/data.json "0.1.2"]
                  [clj-native "0.9.3"]
-                 [overtone/at-at "1.1.1"]
+                 [overtone/at-at "1.2.0"]
                  [overtone/osc-clj "0.9.0"]
                  [overtone/byte-spec "0.3.1"]
                  [overtone/midi-clj "0.5.0"]
@@ -55,7 +55,7 @@
                  [overtone/scsynth-extras "3.5.7.0"]
                  [clj-glob "1.0.0"]
                  [org.clojure/core.match "0.2.0-alpha11"]
-                 [seesaw "1.4.2"]]
+                 [seesaw "1.4.3"]]
   :profiles {:test {:dependencies [[bultitude "0.2.0"]
                                    [polynome "0.2.2"]]}}
   :test-selectors {:core (fn [m] (not (some m [:gui :hw])))
