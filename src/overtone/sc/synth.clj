@@ -194,7 +194,7 @@
   elements"
   [l]
   (when-not (even? (count l))
-    (throw (IllegalArgumentException. (str "A synth requires either an even number of arguments in the form [control default]* i.e. [freq 440 vol 0.5] or a list of maps. You passed " (count l) " args: " l)))))
+    (throw (IllegalArgumentException. (str "A synth requires either an even number of arguments in the form [control default]* i.e. [freq 440 amp 0.5] or a list of maps. You passed " (count l) " args: " l)))))
 
 (defn- ensure-vec!
   "Throws an error if list l is not a vector"
@@ -736,3 +736,22 @@
 (defmacro with-ugen-debugging [& body]
   `(binding [overtone.sc.machinery.ugen.specs/*debugging* true]
      ~@body))
+
+(defn synth-args
+  "Returns a seq of the synth's args as keywords"
+  [synth]
+  (map keyword (:args synth)))
+
+(defn synth-arg-index
+  "Returns an integer index of synth's argument with arg-name.
+
+   For example:
+
+   (defsynth foo [freq 440 amp 0.5] (out 0 (* amp (sin-osc freq))))
+
+   (synth-arg-index foo :amp) #=> 1
+   (synth-arg-index foo \"freq\") #=> 0
+   (synth-arg-index foo :baz) #=> nil"
+  [synth arg-name]
+  (let [arg-name (name arg-name)]
+    (index-of (:args synth) arg-name)))

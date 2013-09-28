@@ -10,9 +10,10 @@
         [clojure.pprint])
   (:require [clojure.zip :as zip]
             [overtone.config.log :as log]
-            [overtone.at-at :as at-at]))
+            [overtone.at-at :as at-at]
+            [overtone.sc.protocols :as protocols]))
 
-; The root group is implicitly allocated
+;; The root group is implicitly allocated
 (defonce _root-group_ (next-id :node))
 
 (defn- emit-inactive-node-modification-error
@@ -59,9 +60,6 @@
       (node-map-n-controls  [this start-control start-bus n]
         "Connect N controls of a node to a set of sequential control
         buses, starting at the given control name."))
-
-    (defprotocol IKillable
-      (kill* [this] "Kill a synth element (node, or group, or ...)."))
 
     (defprotocol ISynthGroup
       (group-prepend-node [group node]
@@ -348,7 +346,7 @@
                    f
                    id)
     (oneshot-event (node-destroyed-event-key id)
-                   #(remove-handler k)
+                   #(remove-event-handler k)
                    (uuid))
     k))
 
@@ -363,7 +361,7 @@
                    f
                    id)
     (oneshot-event (node-destroyed-event-key id)
-                   #(remove-handler k)
+                   #(remove-event-handler k)
                    (uuid))
     k))
 
@@ -482,18 +480,23 @@
   (apply snd "/n_set" (to-sc-id node) (floatify (stringify (idify name-values))))
   node)
 
-(defn node-get-control
+(defn node-get-controls
   "Get one or more synth control values by name.  Returns a map of
   key/value pairs, for example:
 
   {:freq 440.0 :attack 0.2}"
-  [node names]
+  [node control-names]
   (ensure-connected!)
   (ensure-node-active! node "getting node control values")
   (let [res   (recv "/n_set")
-        cvals (do (apply snd "/s_get" (to-sc-id node) (stringify names))
+        cvals (do (apply snd "/s_get" (to-sc-id node) (stringify control-names))
                   (:args (deref! res (str "attempting to get control values " name " for node " (with-out-str (pr node))))))]
     (apply hash-map (keywordify (drop 1 cvals)))))
+
+(defn node-get-control
+  "Get a single synth control value by name."
+  [node control-name]
+  (get (node-get-controls node [control-name]) (keyword (name control-name))))
 
 ;; This can be extended to support setting multiple ranges at once if necessary...
 (defn node-control-range*
@@ -572,7 +575,8 @@
   group)
 
 (defn- group-clear*
-  "Free all child synth nodes in a group."
+  "Nukes all nodes in the group. This completely clears out all
+   subgroups and frees all subsynths."
   [group]
   (ensure-connected!)
   (ensure-node-active! group "clearing node")
@@ -580,8 +584,8 @@
   group)
 
 (defn- group-deep-clear*
-  "Free all child synth nodes in and below this group in other child
-  groups."
+  "Traverses all groups below this group and frees all the synths. Group
+    structure is left unaffected."
   [group]
   (ensure-connected!)
   (ensure-node-active! group "deep clearing node")
@@ -667,8 +671,8 @@
   "Send a node control messages specified in pairs of :arg-name val. It
   is possible to pass a sequence of nodes in which case the same control
   messages will be sent to all nodes.  i.e.
-  (ctl 34 :freq 440 :vol 0.2)
-  (ctl [34 37] :freq 440 :vol 0.2)"
+  (ctl 34 :freq 440 :amp 0.2)
+  (ctl [34 37] :freq 440 :amp 0.2)"
   [node & args]
   (ensure-connected!)
   (if (sequential? node)
@@ -687,14 +691,14 @@
 "
   [& nodes]
   (doseq [node (flatten nodes)]
-    (kill* node)))
+    (protocols/kill* node)))
 
 (extend SynthNode
-  IKillable
+  protocols/IKillable
   {:kill* node-free*})
 
 (extend java.lang.Long
-  IKillable
+  protocols/IKillable
   {:kill* node-free*})
 
 ;;/g_queryTree				get a representation of this group's node subtree.
@@ -796,7 +800,7 @@
    :group-node-tree    group-node-tree*
    :group-free         group-free*}
 
-  IKillable
+  protocols/IKillable
   {:kill* group-deep-clear*})
 
 

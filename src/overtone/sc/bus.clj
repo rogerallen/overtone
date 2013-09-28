@@ -2,9 +2,12 @@
   (:import [java.util.concurrent TimeoutException])
   (:use [overtone.sc.machinery allocator]
         [overtone.sc.machinery.server comms]
-        [overtone.sc defaults server node]
+        [overtone.sc synth ugens defaults server node]
+        [overtone.sc.cgens.tap]
         [overtone.helpers lib]
-	[overtone.sc server]))
+        [overtone.sc.foundation-groups :only [foundation-monitor-group]]
+        [overtone.libs.deps            :only [on-deps]])
+  (:require [overtone.at-at :as at-at]))
 
 ;; ## Buses
 ;;
@@ -14,10 +17,15 @@
 ;; but in SC they are implemented using a simple integer referenced
 ;; array of float values.
 
+(defonce ^{:private true} audio-bus-monitors* (atom {}))
+(defonce ^{:private true} control-bus-monitors* (atom {}))
+(defonce ^{:private true} bus-monitor-pool (at-at/mk-pool))
+(defonce ^{:private true} audio-bus-monitor-group* (atom nil))
+
 (defonce ^{:private true} __PROTOCOLS__
   (do
     (defprotocol IBus
-      (free-bus [this]))))
+      (free-bus [bus] "Free this control or audio bus - enabling the resource to be re-allocated"))))
 
 (defrecord AudioBus [id n-channels rate name]
   to-sc-id*
@@ -114,34 +122,105 @@
 
 ;(on-sync-event :reset reset-buses ::reset-buses)
 
-(defn bus-set!
+(defn control-bus-set!
   "Updates bus to new val. Modification takes place on the server asynchronously.
 
-  (bus-set! my-bus 3) ;=> Sets my-bus to the value 3"
+  (control-bus-set! my-bus 3) ;=> Sets my-bus to the value 3"
   [bus val]
   (let [id  (to-sc-id bus)
         val (double val)]
     (snd "/c_set" id val)))
 
-(defn bus-get
+(defn control-bus-get
   "Get the current value of a control bus."
   [bus]
   (let [id (to-sc-id bus)
-        p  (server-recv "/c_set")]
+        p  (server-recv "/c_set" (fn [info] (= id (first (:args info)))))]
     (snd "/c_get" id)
     (second (:args (deref! p (str "attempting to read the current value of bus " (with-out-str (pr bus))))))))
 
-(defn bus-set-range!
+(defn control-bus-set-range!
   "Set a range of consecutive control buses to the supplied values."
   [bus start len vals]
   (let [id   (to-sc-id bus)
         vals (floatify vals)]
       (apply snd "/c_setn" id start len vals)))
 
-(defn bus-get-range
+(defn control-bus-get-range
   "Get a range of consecutive control bus values."
   [bus len]
   (let [id (to-sc-id bus)
-        p  (server-recv "/c_setn")]
+        p  (server-recv "/c_setn" (fn [info] (and (= id (first (:args info)))
+                                                 (= len (second (:args info))))))]
     (snd "/c_getn" id len)
     (drop 2 (:args (deref! p (str "attempting to get a range of consecutive control bus values of length " len " from bus " (with-out-str (pr bus))))))))
+
+(defn- create-monitor-group
+  "Creates a group for the audio bus monitor synths. Designed to be
+   called in a dependency callback after :foundation-groups-created."
+  []
+  (ensure-connected!)
+  (assert (foundation-monitor-group) "Couldn't find monitor group")
+  (let [g (with-server-sync
+            #(group "Audio Bus Monitors" :tail (foundation-monitor-group))
+            "whilst creating the audio bus monitor group")]
+    (reset! audio-bus-monitor-group* g)))
+
+(on-deps :foundation-groups-created ::create-monitor-group create-monitor-group)
+
+(defonce __BUS-MONITOR-SYNTH__
+  (defsynth mono-audio-bus-level [in-a-bus 0]
+    (let [sig   (in:ar in-a-bus 1)
+          level (amplitude sig)
+          level (lag-ud level 0.1 0.3)]
+      (tap "level" 20 level))))
+
+(defn audio-bus-monitor
+  "Mono bus amplitude monitor. Returns an atom containing the current
+   amplitude of the audio bus. Note that this isn't the current value,
+   rather it's the peak amplitude of the signal within the audio bus.
+
+   For multi-channel buses, an offset may be specified. Current
+   amplitude is updated within the returned atom every 50 ms.
+
+   Note - only creates one monitor per audio bus - subsequent calls for
+   the same audio bus idx will return a cached monitor."
+  ([audio-bus] (audio-bus-monitor audio-bus 0))
+  ([audio-bus chan-offset]
+     (ensure-connected!)
+     (assert @audio-bus-monitor-group* "Couldn't find audio bus monitor group")
+     (let [bus-idx (to-sc-id audio-bus)
+           bus-idx (+ chan-offset bus-idx)]
+       (if-let [[monitor _] (get @audio-bus-monitors* bus-idx)]
+         monitor
+         (let [m-synth (mono-audio-bus-level [:tail @audio-bus-monitor-group*]
+                                             bus-idx)
+               monitor (get-in m-synth [:taps "level"])]
+           (swap! audio-bus-monitors* assoc bus-idx [monitor m-synth])
+           monitor)))))
+
+(defn control-bus-monitor
+  "Control bus monitor. Returns an atom containing the current value of
+   the control bus. Note that this isn't the peak amplitude, rather the
+   direct value of the control bus.
+
+   For multi-channel buses, an offset may be specified. Current
+   amplitude is updated within the returned atom every 50 ms.
+
+   Note - only creates one monitor per control bus - subsequent calls for
+   the same control bus idx will return a cached monitor."
+  ([control-bus] (control-bus-monitor control-bus 0))
+  ([control-bus chan-offset]
+     (ensure-connected!)
+     (let [bus-idx (to-sc-id control-bus)
+           bus-idx (+ chan-offset bus-idx)]
+       (if-let [monitor (get @control-bus-monitors* bus-idx)]
+         monitor
+         (let [monitor (atom 0)]
+           (at-at/every 50
+                        #(reset! monitor (control-bus-get bus-idx))
+                        bus-monitor-pool
+                        :initial-delay 0
+                        :desc (str "control-bus-monitor [" bus-idx "]"))
+           (swap! control-bus-monitors* assoc bus-idx monitor)
+           monitor)))))

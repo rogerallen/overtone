@@ -17,8 +17,8 @@
   (do
     (defsynth mono-player
       "Plays a single channel audio buffer."
-      [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 pan 0 out-bus 0]
-      (out out-bus (* vol
+      [buf 0 rate 1.0 start-pos 0.0 loop? 0 amp 1 pan 0 out-bus 0]
+      (out out-bus (* amp
                       (pan2
                        (scaled-play-buf 1 buf rate
                                         1 start-pos loop?
@@ -27,17 +27,17 @@
 
     (defsynth stereo-player
       "Plays a dual channel audio buffer."
-      [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 pan 0 out-bus 0]
+      [buf 0 rate 1.0 start-pos 0.0 loop? 0 amp 1 pan 0 out-bus 0]
       (let [s (scaled-play-buf 2 buf rate
                                1 start-pos loop?
                                FREE)]
-            (out out-bus (* vol (balance2 (first s) (second s) pan)))))
+            (out out-bus (* amp (balance2 (first s) (second s) pan)))))
 
     (defsynth mono-stream-player
       "Plays a single channel streaming buffer-cue. Must be freed manually when
       done."
-      [buf 0 rate 1 loop? 0 vol 1 pan 0 out-bus 0]
-      (out out-bus (* vol
+      [buf 0 rate 1 loop? 0 amp 1 pan 0 out-bus 0]
+      (out out-bus (* amp
                       (pan2
                        (scaled-v-disk-in 1 buf rate loop?)
                        pan))))
@@ -45,9 +45,9 @@
     (defsynth stereo-stream-player
       "Plays a dual channel streaming buffer-cue. Must be freed manually when
       done."
-      [buf 0 rate 1 loop? 0 vol 1 pan 0 out-bus 0]
+      [buf 0 rate 1 loop? 0 amp 1 pan 0 out-bus 0]
       (let [s (scaled-v-disk-in 2 buf rate loop?)]
-        (out out-bus (* vol (balance2 (first s) (second s) pan)))))))
+        (out out-bus (* amp (balance2 (first s) (second s) pan)))))))
 
 (defonce loaded-samples* (atom {}))
 (defonce cached-samples* (atom {}))
@@ -128,10 +128,11 @@
       files)))
 
 (defn- reload-all-samples []
-  (reset! cached-samples* {})
-  (reset! loaded-samples* {})
-  (doseq [smpl (vals @loaded-samples*)]
-    (apply load-sample* (:path smpl) (:args smpl))))
+  (let [previously-loaded-samples (vals @loaded-samples* )]
+    (reset! cached-samples* {})
+    (reset! loaded-samples* {})
+    (doseq [smpl previously-loaded-samples]
+      (apply load-sample* (:path smpl) (:args smpl)))))
 
 (on-deps :server-ready ::load-all-samples reload-all-samples)
 
@@ -173,7 +174,12 @@
 
    Accepts same args as both players, namely:
 
-   [buf 0 rate 1.0 start-pos 0.0 loop? 0 vol 1 out-bus 0]"
+   {:buf 0 :rate 1.0 :start-pos 0.0 :loop? 0 :amp 1 :out-bus 0}
+
+   If you wish to specify a group target vector i.e. [:head foo-g] this
+   argument must go *after* the smpl argument:
+
+   (sample-player my-samp [:head foo-g] :rate 0.5)"
   [smpl & pargs] {:pre [(sample? smpl)]}
   (let [{:keys [path args]}     smpl
         {:keys [id n-channels]} (get @cached-samples* [path args])

@@ -22,6 +22,26 @@
 
 (defrecord LossyWorker [queue worker current-val])
 
+(defn- worker-core
+  [update-fn current-val* last-val*]
+  (let [current @current-val*
+        last @last-val*]
+    (when (not= current last)
+      (update-fn current)
+      (reset! last-val* current)) ))
+
+(defn- worker
+  [queue update-fn current-val* last-val*]
+  (while (not= (.take queue) :die)
+    (worker-core update-fn current-val* last-val*))
+
+  (log-event "Killing Lossy worker"))
+
+(defn- mk-worker
+  [queue update-fn current-val* last-val*]
+  (fn []
+    (worker queue update-fn current-val* last-val*)))
+
 (defn- lossy-worker
   "Create a lossy worker which will call update-fn on a separate thread
   when lossy-send is called. Calls to update-fn happen sequentially,
@@ -40,15 +60,7 @@
   (let [current-val* (atom nil)
         last-val*    (atom (gensym))
         queue        (LinkedBlockingQueue.)
-        work         (fn []
-                       (while (not= (.take queue) :die)
-                         (let [current @current-val*
-                               last @last-val*]
-                           (when (not= current last)
-                             (update-fn current)
-                             (reset! last-val* current))))
-                       (log-event "Killing Lossy worker"))
-        worker       (Thread. work)]
+        worker       (Thread. (mk-worker queue update-fn current-val* last-val*))]
     (.start worker)
     (LossyWorker. queue worker current-val*)))
 
@@ -79,8 +91,8 @@
                               (funky-bass (:note event)))
                             ::midi-note-down-hdlr)
 
-  Handlers can return :overtone/remove-handler to be removed from the
-  handler list after execution."
+  Handlers can return :overtone/remove-handler to be removed from
+  the handler list after execution."
   [event-type handler key]
   (log-event "Registering async event handler:: " event-type " with key: " key)
   (handlers/add-handler! handler-pool event-type key handler ))
@@ -155,7 +167,7 @@
   (log-event "Registering sync self-removing event handler:: " event-type " with key: " key)
   (handlers/add-one-shot-sync-handler! handler-pool event-type key handler))
 
-(defn remove-handler
+(defn remove-event-handler
   "Remove an event handler previously registered with specified
    key. Removes both sync and async handlers with a given key for a
    particular event type.
@@ -165,7 +177,7 @@
   (on-event :foo my-foo-handler ::bar-key)
   (event :foo :val 200) ; my-foo-handler gets called with:
                         ; {:event-type :foo :val 200}
-  (remove-handler ::bar-key)
+  (remove-event-handler ::bar-key)
   (event :foo :val 200) ; my-foo-handler no longer called"
   [key]
   (let [[old new] (swap-returning-prev! lossy-workers* dissoc key)]
@@ -174,8 +186,8 @@
   (log-event "Removing event handler associated with key: " key)
   (handlers/remove-handler! handler-pool key))
 
-(defn- remove-all-handlers
-  "Remove all handlers."
+(defn- remove-all-event-handlers
+  "Remove all handlers. Do not call unless you know what you're doing!"
   []
   (let [[old new] (swap-returning-prev! lossy-workers* (fn [_] {}))]
     (doseq [old-worker (vals old)]
@@ -187,8 +199,9 @@
   "Fire an event of type event-type with any number of additional
   properties.
 
-  NOTE: an event requires key/value pairs, and everything gets wrapped
-  into an event map.  It will not work if you just pass values.
+  NOTE: an event requires either a map as a single argument, or
+  key/value pairs which will be poured into an event map.  It will not
+  work if you just pass values.
 
   (event ::my-event)
   (event ::filter-sweep-done :instrument :phat-bass)"
@@ -219,7 +232,10 @@
   (when @monitoring?*
     (swap! monitor* assoc event-type args))
   (binding [overtone.libs.handlers/*log-fn* log/error]
-    (let [event-info (apply hash-map args)]
+    (let [event-info (if (and (= 1 (count args))
+                              (map? (first args)))
+                       (first args)
+                       (apply hash-map args))]
       (apply handlers/sync-event handler-pool event-type event-info))))
 
 (defn event-debug-on

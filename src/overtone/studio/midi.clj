@@ -1,12 +1,17 @@
 (ns overtone.studio.midi
-  (:use [overtone.sc node dyn-vars]
-        [overtone.midi]
+  #^{:author "Sam Aaron and Jeff Rose"
+     :doc "A high level MIDI API for sending and receiving messages with
+           external MIDI devices and automatically hooking into
+           Overtone's event system." }
+  (:use [overtone.sc.dyn-vars]
         [overtone.at-at :only (mk-pool every)]
         [overtone.libs event counters]
         [overtone.sc.defaults :only [INTERNAL-POOL]]
         [overtone.helpers.system :only [mac-os?]]
-        [overtone.config.store :only [config-get]])
-  (:require [overtone.config.log :as log]))
+        [overtone.config.store :only [config-get]]
+        )
+  (:require [overtone.config.log :as log]
+            [overtone.midi :as midi]))
 
 (defonce midi-control-agents* (atom {}))
 (defonce poly-players* (atom {}))
@@ -78,54 +83,6 @@
   [dev command control-id]
   (concat (midi-mk-full-device-event-key dev command) [control-id]))
 
-(defn midi-poly-player
-  "Sets up the event handlers and manages synth instances to easily play
-  a polyphonic instrument with a midi controller.  The play-fn should
-  take the note and velocity as the only two arguments, and the synth
-  should have a gate parameter that can be set to zero when a :note-off
-  event is received.
-
-    (definst ding
-      [note 60 velocity 100 gate 1]
-      (let [freq (midicps note)
-            amp  (/ velocity 127.0)
-            snd  (sin-osc freq)
-            env  (env-gen (adsr 0.001 0.1 0.6 0.3) gate :action FREE)]
-        (* amp env snd)))
-
-    (def dinger (midi-poly-player ding))
-  "
-  ([play-fn] (midi-poly-player play-fn ::midi-poly-player))
-  ([play-fn player-key] (midi-poly-player play-fn [:midi] player-key))
-  ([play-fn device-key player-key]
-     (let [notes*        (atom {})
-           on-event-key  (concat device-key [:note-on])
-           off-event-key (concat device-key [:note-off])
-           on-key        (concat [::midi-poly-player] on-event-key)
-           off-key       (concat [::midi-poly-player] off-event-key)]
-       (on-event on-event-key (fn [{note :note velocity :velocity}]
-                                (let [amp (float (/ velocity 127))]
-                                  (swap! notes* assoc note (play-fn :note note :amp amp :velocity velocity))))
-                 on-key)
-
-       (on-event off-event-key (fn [{note :note velocity :velocity}]
-                                 (let [velocity (float (/ velocity 127 ))]
-                                   (when-let [n (get @notes* note)]
-                                     (with-inactive-node-modification-error :silent
-                                       (node-control n [:gate 0 :after-touch velocity]))
-                                     (swap! notes* dissoc note))))
-                 off-key)
-
-       ;; TODO listen for '/n_end' event for nodes that free themselves
-       ;; before recieving a note-off message.
-       (let [player (with-meta {:notes* notes*
-                                :on-key on-key
-                                :off-key off-key
-                                :device-key device-key
-                                :player-key player-key
-                                :playing? (atom true)}
-                      {:type ::midi-poly-player})]
-         (swap! poly-players* assoc player-key player)))))
 
 (defn midi-device-keys
   "Return a list of device event keys for the available MIDI devices"
@@ -163,16 +120,16 @@
 
 (defn midi-player-stop
   ([]
-     (remove-handler [::midi-poly-player :midi :note-on])
-     (remove-handler [::midi-poly-player :midi :note-off]))
+     (remove-event-handler [::midi-poly-player :midi :note-on])
+     (remove-event-handler [::midi-poly-player :midi :note-off]))
   ([player-or-key]
      (if (keyword? player-or-key)
        (midi-player-stop (get @poly-players* player-or-key))
        (let [player player-or-key]
          (when-not (= ::midi-poly-player (type player))
            (throw (IllegalArgumentException. (str "Expected a midi-poly-player. Got: " (prn-str (type player))))))
-         (remove-handler (:on-key player))
-         (remove-handler (:off-key player))
+         (remove-event-handler (:on-key player))
+         (remove-event-handler (:off-key player))
          (reset! (:playing? player) false)
          (swap! poly-players* dissoc (:player-key player))
          player))))
@@ -322,7 +279,7 @@
    such as the Java Real Time Sequencer, and de.humatic.mmj
    duplicates (if on os x)"
   []
-  (let [devs   (midi-sources)
+  (let [devs   (midi/midi-sources)
         devs   (select-mmj-devices-if-available-on-osx devs)
         devs   (remove-duplicate-devices devs)
         devs   (map #(assoc % ::dev-num (next-id
@@ -336,7 +293,7 @@
 
 (defn- detect-midi-receivers
   []
-  (let [rcvs   (midi-sinks)
+  (let [rcvs   (midi/midi-sinks)
         rcvs   (select-mmj-devices-if-available-on-osx rcvs)
         rcvs   (remove-duplicate-devices rcvs)
         rcvs   (map #(assoc % ::dev-num (next-id
@@ -357,7 +314,7 @@
   (doall (filter
           (fn [dev]
             (try
-              (midi-handle-events (midi-in dev)
+              (midi/midi-handle-events (midi/midi-in dev)
                                   #(handle-incoming-midi-event dev %1)
                                   #(handle-incoming-midi-sysex dev %1))
               true
@@ -370,7 +327,7 @@
   (-> (detect-midi-devices) add-listener-handles!))
 
 (defonce ^:private connected-midi-receivers*
-  (map midi-out (detect-midi-receivers)))
+  (map midi/midi-out (detect-midi-receivers)))
 
 (defn connected-midi-devices
   "Returns a sequence of device maps for all 'connected' MIDI
@@ -408,3 +365,49 @@
   "Returns the full device key for the specified MIDI device"
   [dev]
   (::full-device-key dev))
+
+(defn midi-sysex
+  "Send a midi System Exclusive msg made up of the bytes in byte-seq
+   byte-array, sequence of integers, longs or a byte-string to the
+   receiver.  If a byte string is specified, must only contain bytes
+   encoded as hex values.  Commas, spaces, and other whitespace is
+   ignored.
+
+   See connected-midi-receivers for a full list of available receivers."
+  [rcv byte-seq]
+  (midi/midi-sysex rcv byte-seq))
+
+(defn midi-control
+  "Send a MIDI control msg to the receiver. See connected-midi-receivers
+   for a full list of available receivers."
+  ([rcv ctl-num val]
+     (midi/midi-control rcv ctl-num val))
+  ([rcv ctl-num val channel]
+     (midi/midi-control rcv ctl-num val channel)))
+
+(defn midi-note-on
+  "Send a MIDI note on msg to the receiver. See connected-midi-receivers
+   for a full listof available receivers."
+  ([rcv note-num vel]
+     (midi/midi-note-on rcv note-num vel))
+  ([rcv note-num vel channel]
+     (midi/midi-note-on rcv note-num vel channel)))
+
+(defn midi-note-off
+  "Send a MIDI note off msg to the receiver. See connected-midi-receivers
+   for a full list of available receivers."
+  ([rcv note-num]
+     (midi/midi-note-off rcv note-num))
+  ([rcv note-num channel]
+     (midi/midi-note-off rcv note-num channel)))
+
+(defn midi-note
+  "Send a midi on/off msg pair to the receiver. The off message will be
+   sent dur ms after the on message resulting in the note being 'played'
+   for dur ms.
+
+   See connected-midi-receivers for a full list of available receivers."
+  ([rcv note-num vel dur]
+     (midi/midi-note rcv note-num vel dur))
+  ([rcv note-num vel dur channel]
+     (midi/midi-note rcv note-num vel dur channel)))
