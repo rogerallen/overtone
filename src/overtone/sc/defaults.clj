@@ -31,11 +31,6 @@
   "Initial value for the pan of a voice (center)"
   0.0)
 
-(def AUDIO-BUS-RESERVE-COUNT
-  "Number of audio buses to reserve. These buses won't be available to users
-  via overtone.sc.bus/audio-bus"
-  50)
-
 (def SERVER-PORT
   "Default port number used when booting external server. If nil, a random port is used"
   nil)
@@ -49,8 +44,9 @@
   500)
 
 (def MAX-OSC-SAMPLES
-  "Max number of samples supported in a UDP OSC message"
-  6548)
+  "Max number of samples supported in a UDP OSC message. Obtained
+  through experimentation."
+  1838)
 
 (def INTERNAL-POOL
   "make an at-at pool for all internal scheduling"
@@ -75,3 +71,5 @@
                             "/Applications/SuperCollider/plugins"
                             "/Applications/SuperCollider.app/Contents/Resources/plugins"
                             "/Applications/SuperCollider/SuperCollider.app/Contents/Resources/plugins"]}})
+
+(def SC-MAX-FLOAT-VAL (Math/pow 2 24))

@@ -29,7 +29,7 @@ collaborating with music.  It provides:
   arpeggiators, etc.)
 * Metronome and timing system to support live-programming and sequencing
 * Plug and play MIDI device I/O
-* Simple Open Sound Control (OSC) message handling
+* A full Open Sound Control (OSC) client and server implementation.
 * Pre-cache - a system for locally caching external assets such as .wav
   files
 * An API for querying and fetching sounds from http://freesound.org
@@ -47,7 +47,7 @@ collaborating with music.  It provides:
 
     # add the following dependencies to insane-noises/project.clj
     # [org.clojure/clojure "1.5.1"]
-    # [overtone "0.8.1"]
+    # [overtone "0.9.1"]
 
     $ cd insane-noises
     $ lein repl
@@ -137,6 +137,7 @@ Sam Aaron performs with Overtone Live @ Arnolfini:
 A list of bands using Overtone to generate sounds:
 
 * [Meta-eX](http://meta-ex.com)
+* [Repl Electric](http://repl-electric.com)
 
 
 ## Cheat Sheet
@@ -172,7 +173,7 @@ ready to submit a patch then fork your own copy and do a pull request.
 Overtone and its dependencies are on http://clojars.org, and the
 dependency for your `project.clj` is:
 
-    [overtone "0.8.1"]
+    [overtone "0.9.1"]
 
 ## Acknowledgements
 

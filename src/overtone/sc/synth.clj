@@ -16,8 +16,15 @@
         [overtone.helpers.string :only [hash-shorten]])
 
   (:require [overtone.config.log :as log]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [overtone.sc.protocols :as protocols]))
 
+(declare synth-player)
+
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord-ifn Synth [name ugens sdef args params instance-fn]
+      (partial synth-player sdef params))))
 
 (defn- valid-control-proxy-rate?
   [rate]
@@ -221,19 +228,19 @@
   (for [[p-name p-val] (partition 2 params)]
     (let [param-map
           (cond
-            (vector? p-val) (do
-                              (ensure-valid-control-proxy-vec! p-val)
-                              {:name (str p-name)
-                               :default (first p-val)
-                               :rate (second p-val)})
+           (vector? p-val) (do
+                             (ensure-valid-control-proxy-vec! p-val)
+                             {:name (str p-name)
+                              :default (first p-val)
+                              :rate (second p-val)})
 
-            (associative? p-val) (merge
-                                  {:name  (str p-name)
-                                   :rate  DEFAULT-RATE} p-val)
+           (associative? p-val) (merge
+                                 {:name  (str p-name)
+                                  :rate  DEFAULT-RATE} p-val)
 
-            :else {:name (str p-name)
-                   :default `(float ~p-val)
-                   :rate DEFAULT-RATE})]
+           :else {:name (str p-name)
+                  :default `(float (to-id ~p-val))
+                  :rate DEFAULT-RATE})]
       (ensure-param-keys! param-map)
       param-map)))
 
@@ -503,11 +510,10 @@
           args              (or args [])
           [target pos args] (extract-target-pos-args args (foundation-default-group) :tail)
           args              (idify args)
-          args              (mapcat (fn [x] (if (map? x)
-                                             (flatten (seq x))
-                                             [x]))
-                                    args)
-          args              (idify args)
+          args              (map (fn [arg] (if-let [id (:id arg)]
+                                            id
+                                            arg))
+                                 args)
           defaults          (into {} (map (fn [{:keys [name value]}]
                                             [(keyword name) @value])
                                           params))
@@ -520,8 +526,6 @@
         (swap! active-synth-nodes* assoc (:id synth-node) synth-node))
       synth-node))
 
-(defrecord-ifn Synth [name ugens sdef args params instance-fn]
-               (partial synth-player sdef params))
 
 (defn update-tap-data
   [msg]
@@ -576,7 +580,7 @@
   "Define a synthesizer and return a player function. The synth
   definition will be loaded immediately, and a :new-synth event will be
   emitted. Expects a name, an optional doc-string, a vector of synth
-  params, and a ugen-form as it's arguments.
+  params, and a ugen-form as its arguments.
 
   (defsynth foo [freq 440]
     (out 0 (sin-osc freq)))
@@ -598,14 +602,14 @@
     \"The phatest space pad ever!\"
     [] (...))
 
-  The function generated will a target vector argument that must come
-  first containing position and target as elements (see the node
-  function docs).
+  The function generated will accept a target vector argument that
+  must come first, containing position and target as elements (see the
+  node function docs).
 
   ;; call foo player with default args:
   (foo)
 
-  ;; call foo player specifyign node should be at the tail of group 0
+  ;; call foo player specifying node should be at the tail of group 0
   (foo [:tail 0])
 
   ;; call foo player with positional arguments
@@ -741,3 +745,14 @@
   [synth arg-name]
   (let [arg-name (name arg-name)]
     (index-of (:args synth) arg-name)))
+
+
+(extend Synth
+  protocols/IKillable
+  {:kill* (fn [s]
+            (kill (node-tree-matching-synth-ids (:name (:sdef s)))))})
+
+(extend java.util.regex.Pattern
+  protocols/IKillable
+  {:kill* (fn [s]
+            (kill (node-tree-matching-synth-ids (:name (:sdef s)))))})

@@ -7,7 +7,9 @@
         [overtone.helpers lib]
         [overtone.sc.foundation-groups :only [foundation-monitor-group]]
         [overtone.libs.deps            :only [on-deps]])
-  (:require [overtone.at-at :as at-at]))
+  (:require [overtone.at-at :as at-at]
+            [overtone.sc.info :refer [server-num-input-buses server-num-output-buses]]
+            [overtone.libs.deps :refer [satisfy-deps]]))
 
 ;; ## Buses
 ;;
@@ -27,19 +29,21 @@
     (defprotocol IBus
       (free-bus [bus] "Free this control or audio bus - enabling the resource to be re-allocated"))))
 
-(defrecord AudioBus [id n-channels rate name]
-  to-sc-id*
-  (to-sc-id [this] (:id this))
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord AudioBus [id n-channels rate name]
+      to-sc-id*
+      (to-sc-id [this] (:id this))
 
-  IBus
-  (free-bus [this] (free-id :audio-bus (:id this) (:n-channels this))))
+      IBus
+      (free-bus [this] (free-id :audio-bus (:id this) (:n-channels this))) )
 
-(defrecord ControlBus [id n-channels rate name]
-  to-sc-id*
-  (to-sc-id [this] (:id this))
+    (defrecord ControlBus [id n-channels rate name]
+      to-sc-id*
+      (to-sc-id [this] (:id this))
 
-  IBus
-  (free-bus [this] (free-id :control-bus (:id this) (:n-channels this))))
+      IBus
+      (free-bus [this] (free-id :control-bus (:id this) (:n-channels this))))))
 
 (defmethod print-method AudioBus [b w]
   (.write w (format "#<audio-bus: %s, %s, id %d>"
@@ -111,49 +115,140 @@
      (let [id (alloc-id :audio-bus n-channels)]
        (AudioBus. id n-channels :audio name))))
 
-;; Reserve busses for overtone
-(defonce ___reserve-overtone-busses____
-  (dotimes [i AUDIO-BUS-RESERVE-COUNT]
-    (audio-bus)))
+;; Reserve first control bus. This is a precautionary measure to stop
+;; synths which have control bus args with defaults of 0 which aren't
+;; overridden on triggering from clobbering important bus data. By
+;; reserving the first control bus (with an id of 0) we ensure that this
+;; bus isn't used for important data.
+(defonce ___reserve-overtone-first-control-bus___
+  (control-bus "Reserved Bus 0"))
 
-(defn reset-buses
-  [event-info]
-  nil)
+(defn- ensure-valid-bus-offset!
+  [bus offset]
+  (when-not (and (control-bus? bus)
+                 (< offset (:n-channels bus)))
+    (throw (Exception. (str "Invalid bus offset found. Offset was "
+                            offset
+                            ", which is greater or equal to the number of channels: "
+                            (:n-channels bus) ". ")))))
 
-;(on-sync-event :reset reset-buses ::reset-buses)
+(defn- ensure-valid-bus-offset-with-len!
+  [bus offset len]
+  (ensure-valid-bus-offset! bus offset)
+  (when-not (and (control-bus? bus)
+                 (<= (+ offset len) (:n-channels bus)))
+    (throw (Exception. (str "Invalid value len found. len was "
+                            len
+                            ", which is greater or equal to the number of channels remaining after offset: "
+                            offset
+                            ", which is: "
+                            (- (:n-channels bus) offset) ".")))))
 
 (defn control-bus-set!
-  "Updates bus to new val. Modification takes place on the server asynchronously.
+  "Asynchronously updates control bus to new val.
 
-  (control-bus-set! my-bus 3) ;=> Sets my-bus to the value 3"
-  [bus val]
-  (let [id  (to-sc-id bus)
-        val (double val)]
-    (snd "/c_set" id val)))
+   (control-bus-set! my-bus 3) ;=> Sets my-bus to the value 3
 
-(defn control-bus-get
-  "Get the current value of a control bus."
-  [bus]
-  (let [id (to-sc-id bus)
-        p  (server-recv "/c_set" (fn [info] (= id (first (:args info)))))]
-    (snd "/c_get" id)
-    (second (:args (deref! p (str "attempting to read the current value of bus " (with-out-str (pr bus))))))))
+   An optional offset may be supplied to access values within
+   multi-channel buses.
+
+   Modification takes place on the server asynchronously."
+  ([bus val] (control-bus-set! bus val 0))
+  ([bus val offset]
+     (let [id  (to-sc-id bus)
+           id  (+ offset id)
+           val (float val)]
+       (when (control-bus? bus)
+         (ensure-valid-bus-offset! bus offset))
+       (snd "/c_set" id val)
+       val)))
+
+(defn control-bus-get-channel
+  "Syncronously get the current value of an individual channel of a
+   control bus. Always returns a single value. For a multi-channel bus,
+   defaults to first channel.
+
+   An optional offset may be specified."
+  ([bus]
+     (control-bus-get-channel bus 0))
+  ([bus offset]
+     (when (control-bus? bus)
+       (ensure-valid-bus-offset! bus offset))
+     (let [id (to-sc-id bus)
+           id (+ offset id)]
+       (let [p  (server-recv "/c_set" (fn [info] (= id (first (:args info))))) ]
+         (snd "/c_get" id)
+         (second (:args (deref! p (str "attempting to read the current value of bus "
+                                       (with-out-str (pr bus))))))))))
 
 (defn control-bus-set-range!
-  "Set a range of consecutive control buses to the supplied values."
-  [bus start len vals]
-  (let [id   (to-sc-id bus)
-        vals (floatify vals)]
-      (apply snd "/c_setn" id start len vals)))
+  "Asynchronously set a range of consecutive control buses to the
+   supplied vals.
+
+   An optional offset may be supplied to set values within multi-channel
+   buses.
+
+   Modification takes place on the server asynchronously."
+  ([bus vals] (control-bus-set-range! bus vals 0))
+  ([bus vals offset]
+     (let [len  (int (count vals))
+           id   (+ offset (to-sc-id bus))
+           vals (floatify vals)]
+       (when (control-bus? bus)
+         (ensure-valid-bus-offset-with-len! bus offset len))
+       (apply snd "/c_setn" id len vals)
+       vals)))
 
 (defn control-bus-get-range
-  "Get a range of consecutive control bus values."
-  [bus len]
-  (let [id (to-sc-id bus)
-        p  (server-recv "/c_setn" (fn [info] (and (= id (first (:args info)))
-                                                 (= len (second (:args info))))))]
-    (snd "/c_getn" id len)
-    (drop 2 (:args (deref! p (str "attempting to get a range of consecutive control bus values of length " len " from bus " (with-out-str (pr bus))))))))
+  "Synchronously get a range (of length len) of consecutive control bus
+   values.
+
+   An optional offset may be supplied to access values within
+   multi-channel buses."
+  ([bus len] (control-bus-get-range bus len 0))
+  ([bus len offset]
+     (let [len (int len)
+           id  (to-sc-id bus)
+           id  (+ offset id)
+           p   (server-recv "/c_setn" (fn [info] (and (= id (first (:args info)))
+                                                     (= len (second (:args info))))))]
+       (when (control-bus? bus)
+         (ensure-valid-bus-offset-with-len! bus offset len))
+       (snd "/c_getn" id len)
+       (drop 2 (:args (deref! p (str "attempting to get a range of consecutive control bus values of length "
+                                     len " from bus " (with-out-str (pr bus)))))))))
+
+(defn control-bus-get
+  "Synchronously get the current value of a control bus. If a
+   control-bus record is passed in, all channels are returned.
+
+   An optional offset may be supplied to access values within
+   multi-channel buses."
+  ([bus] (control-bus-get bus 0))
+  ([bus offset]
+     (if (control-bus? bus)
+       (control-bus-get-range bus (:n-channels bus) offset)
+       (control-bus-get-channel bus offset))))
+
+(defn control-bus-fill!
+  "Fill a (multi-channel) control bus with a specific value.
+
+   Optional offset and len vals may be supplied to specify a subset of
+   channels with multi-channel buses."
+  ([bus fill-val]
+     (assert (control-bus? bus) "bus must be a valid control bus to fill. To reference a control-bus numerically, you must also supply the length of adjacent buses to fill.")
+     (let [len (:n-channels bus)]
+       (control-bus-fill! bus fill-val len)))
+  ([bus fill-val len] (control-bus-fill! bus fill-val len 0))
+  ([bus fill-val len offset]
+     (let [len      (int len)
+           fill-val (float fill-val)
+           id       (to-sc-id bus)
+           id       (+ offset id)]
+       (when (control-bus? bus)
+         (ensure-valid-bus-offset-with-len! bus offset len))
+       (snd "/c_fill" id len fill-val)
+       fill-val)))
 
 (defn- create-monitor-group
   "Creates a group for the audio bus monitor synths. Designed to be
@@ -224,3 +319,33 @@
                         :desc (str "control-bus-monitor [" bus-idx "]"))
            (swap! control-bus-monitors* assoc bus-idx monitor)
            monitor)))))
+
+(defn bus-monitor
+  "Returns either a control or audio bus monitor depending on the rate
+   of bus supplied. Returns an atom containing the current value of the
+   control bus. Note that this isn't the peak amplitude, rather the
+   direct value of the control bus.
+
+   For multi-channel buses, an offset may be specified. Current
+   amplitude is updated within the returned atom every 50 ms.
+
+   Note - only creates one monitor per bus - subsequent calls for the
+   same bus will return a cached monitor.
+
+   See audio-bus-monitor and control-bus-monitor for specific details."
+  ([bus] (bus-monitor bus 0))
+  ([bus chan-offset]
+     (assert (bus? bus))
+     (cond
+      (audio-bus? bus) (audio-bus-monitor bus chan-offset)
+      (control-bus? bus) (control-bus-monitor bus chan-offset)
+      :else (throw (Exception. (str "Unknown bus type: " bus))))))
+
+(defn- allocate-hw-audio-buses
+  []
+  (let [n-buses (+ (server-num-input-buses)
+                   (server-num-output-buses))]
+    (audio-bus n-buses "Reserved Audio Busses")
+    (satisfy-deps :hw-audio-buses-reserved)))
+
+(on-deps :synthdefs-loaded ::allocate-hw-audio-busses allocate-hw-audio-buses)

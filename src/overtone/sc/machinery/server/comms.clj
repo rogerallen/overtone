@@ -20,8 +20,8 @@
 (defn- massage-numerical-args
   "Massage numerical args to the form SC would like them. Currently this
   just casts all Longs to Integers and Doubles to Floats."
-  [args]
-  (map (fn [arg]
+  [argv]
+  (mapv (fn [arg]
          (cond (instance? Long arg)
                (Integer. arg)
 
@@ -30,7 +30,7 @@
 
                :else
                arg))
-       args))
+       argv))
 
 (defn server-snd
   "Sends an OSC message to the server. If the message path is a known
@@ -40,7 +40,7 @@
 
   (server-snd \"/foo\" 1 2.0 \"eggs\")"
   [path & args]
-  (let [args (massage-numerical-args args)]
+  (let [args (massage-numerical-args (vec args))]
     (log/debug (str "Sending: " path ", args: " (into [] args)))
     (when @osc-debug*
       (println "Sending: " path args))
@@ -77,9 +77,14 @@
   be the unique sync id.  This is useful when the action-fn is itself
   asynchronous yet you wish to synchronise with its completion. The
   action-fn can sync using the fn server-sync.  Returns the result of
-  action-fn."
+  action-fn
+
+  Throws an exception if the sync doesn't complete. By specifying an
+  optional error-msg, you can communicate back to the user through the
+  timeout exception the cause of the exception. Typical error-msg values
+  start with \"whilst...\" i.e. \"whilst creating group foo\"."
   ([action-fn] (with-server-self-sync action-fn ""))
-  ([action-fn msg]
+  ([action-fn error-msg]
      (let [id   (next-id ::server-sync-id)
            prom (promise)
            key  (uuid)]
@@ -88,14 +93,19 @@
                                  (deliver prom true)))
                       key)
        (let [res (action-fn id)]
-         (deref! prom (str "attempting to self-synchronise with the server " msg))
+         (deref! prom (str "attempting to self-synchronise with the server " error-msg))
          res))))
 
 (defn with-server-sync
   "Blocks current thread until all osc messages in action-fn have
-  completed. Returns result of action-fn."
+  completed. Returns result of action-fn.
+
+  Throws an exception if the sync doesn't complete. By specifying an
+  optional error-msg, you can communicate back to the user through the
+  timeout exception the cause of the exception. Typical error-msg values
+  start with \"whilst...\" i.e. \"whilst creating group foo\""
   ([action-fn] (with-server-sync action-fn ""))
-  ([action-fn msg]
+  ([action-fn error-msg]
      (let [id   (next-id ::server-sync-id)
            prom (promise)
            key  (uuid)]
@@ -106,7 +116,7 @@
                  key)
        (let [res (action-fn)]
          (server-snd "/sync" id)
-         (deref! prom (str "attempting to synchronise with the server " msg))
+         (deref! prom (str "attempting to synchronise with the server " error-msg))
          res))))
 
 (defn server-recv

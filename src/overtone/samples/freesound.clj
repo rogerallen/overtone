@@ -9,15 +9,17 @@
   (:require [clojure.data.json :as json]
             [overtone.libs.asset :as asset]
             [overtone.sc.sample :as samp]
-))
+            [overtone.sc.buffer :as buffer]))
 
 (def ^:dynamic *api-key* "47efd585321048819a2328721507ee23")
 
-(defrecord-ifn FreesoundSample
-  [id size n-channels rate status path args name freesound-id]
-  samp/sample-player
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord-ifn FreesoundSample
+      [id size n-channels rate status path args name freesound-id]
+      samp/sample-player
+      to-sc-id*
+      (to-sc-id [this] (:id this)))))
 
 (derive FreesoundSample :overtone.sc.sample/playable-sample)
 
@@ -86,9 +88,14 @@
   id. Returns the path to a cached local copy of the audio file."
   [id]
   (let [info (freesound-info id)
+        type (:type info)
         name (:original_filename info)
         url  (sound-serve-url id)]
-    (asset/asset-path url name)))
+    (if (or (not type)
+            (some #{type} buffer/supported-file-types))
+      (asset/asset-path url name)
+      (throw (Exception. (str "Invalid sample type, only " buffer/supported-file-types " are supported. Found: " type))))))
+
 
 (defn freesound-sample
   "Download, cache and persist the freesound audio file specified by

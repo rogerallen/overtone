@@ -8,6 +8,41 @@
         [overtone.helpers audio-file lib file doc]
         [overtone.sc.util :only [id-mapper]]))
 
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord BufferInfo [id size n-channels rate n-samples rate-scale duration]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))
+
+    (defrecord Buffer [id size n-channels rate status name]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))
+
+    (defrecord BufferFile [id size n-channels rate status path]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))
+
+    (defrecord BufferOutStream [id size n-channels header samples rate status path open?]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))
+
+    (defrecord BufferInStream [id size n-channels rate status path open?]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))))
+
+(defmethod print-method Buffer [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
+
+(def supported-file-types ["wav" "aiff" "aif"])
+
 (defn- emit-inactive-buffer-modification-error
   "The default error behaviour triggered when a user attempts to work
    with an inactive buffer"
@@ -23,9 +58,7 @@
              ibme
              "Expected one of :silent, :warning, :exception."))))))
 
-(defrecord BufferInfo [id size n-channels rate n-samples rate-scale duration]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
+
 
 (defmethod print-method BufferInfo [b w]
   (.write w (format "#<buffer-info: %fs %s %d>"
@@ -78,20 +111,8 @@
         :rate-scale rate-scale
         :duration duration}))))
 
-(defrecord Buffer [id size n-channels rate status name]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
 
-(defmethod print-method Buffer [b w]
-  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
-                    (name @(:status b))
-                    (:name b)
-                    (:duration b)
-                    (cond
-                     (= 1 (:n-channels b)) "mono"
-                     (= 2 (:n-channels b)) "stereo"
-                     :else (str (:n-channels b) " channels"))
-                    (:id b))))
+
 
 (defn buffer
   "Synchronously allocate a new zero filled buffer for storing audio
@@ -115,10 +136,6 @@
         (assoc info
           :name name
           :status (atom :live))))))
-
-(defrecord BufferFile [id size n-channels rate status path]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
 
 (defn buffer-alloc-read
   "Synchronously allocates a buffer with the same number of channels as
@@ -146,7 +163,7 @@
          (let [info                              (buffer-info id)
                {:keys [id size rate n-channels]} info]
            (when (every? zero? [size rate n-channels])
-             (throw (Exception. (str "Unable to read file - perhaps path is not a valid audio file: " path))))
+             (throw (Exception. (str "Unable to read file - perhaps path is not a valid audio file (only " supported-file-types " supported) : " path))))
 
            (map->BufferFile
             (assoc info
@@ -240,17 +257,17 @@
   writing the data (defaults to 0)."
   ([buf data] (buffer-write! buf 0 data))
   ([buf start-idx data]
-     (assert (buffer? buf))
-     (ensure-buffer-active! buf)
-     (assert (<= (count data) MAX-OSC-SAMPLES)
-             (fs "Error - the data you attempted to write to the buffer was
+     (let [cnt (count data)]
+       (assert (buffer? buf))
+       (ensure-buffer-active! buf)
+       (assert (<= cnt MAX-OSC-SAMPLES)
+               (fs "Error - the data you attempted to write to the buffer was
                   too large to be sent via UDP."))
-     (let [data    (if (number? data) [data] data)
-           size    (count data)
-           doubles (map double data)]
-       (if (> (+ start-idx size) (:size buf))
-         (throw (Exception. (str "the data you attempted to write to buffer " (:id buf) "was too large for its capacity. Use a smaller data list and/or a lower start index.")))
-         (apply snd "/b_setn" (:id buf) start-idx size doubles)))
+       (let [data    (if (number? data) [data] data)
+             doubles (map float data)]
+         (if (> (+ start-idx cnt) (:size buf))
+           (throw (Exception. (str "the data you attempted to write to buffer " (:id buf) "was too large for its capacity. Use a smaller data list and/or a lower start index.")))
+           (apply snd "/b_setn" (:id buf) start-idx cnt doubles))))
      buf))
 
 
@@ -262,13 +279,14 @@
   ([buf start-idx data]
      (ensure-buffer-active! buf)
      (assert (buffer? buf))
-     (loop [data-left data
+     (loop [data-left (vec data)
             idx       0]
-       (let [to-write  (take MAX-OSC-SAMPLES data-left)
-             data-left (drop MAX-OSC-SAMPLES data-left)]
-         (when-not (empty? to-write)
-           (buffer-write! buf idx to-write)
-           (recur data-left (+ idx (count to-write))))))
+       (let [left-cnt  (min MAX-OSC-SAMPLES (count data-left))
+             to-write  (subvec data-left 0 left-cnt)
+             data-left (subvec data-left left-cnt)]
+         (buffer-write! buf idx to-write)
+         (when-not (empty? data-left)
+           (recur data-left (+ idx left-cnt)))))
      buf))
 
 (defn buffer-fill!
@@ -347,10 +365,6 @@
                     n-frames start-frame 0)
     :buffer-saved))
 
-(defrecord BufferOutStream [id size n-channels header samples rate status path open?]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
-
 (defn buffer-stream
   "Returns a buffer-stream which is similar to a regular buffer but may
   be used with the disk-out ugen to stream to a specific file on disk.
@@ -410,10 +424,6 @@
   (buffer-free buf-stream)
   (reset! (:open? buf-stream) false)
   (:path buf-stream))
-
-(defrecord BufferInStream [id size n-channels rate status path open?]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
 
 (defn buffer-cue
   "Returns a buffer-cue which is similar to a regular buffer but may be
@@ -495,6 +505,8 @@
 
 (def TWO-PI (* 2 Math/PI))
 
+
+
 (defn create-buffer-data
   "Create a sequence of floats for use as a buffer.  Result will contain
    values obtained by calling f with values linearly interpolated
@@ -543,3 +555,31 @@
 (defmethod write-wav ::sequence
   [data path frame-rate n-channels]
   (write-audio-file-from-seq data path frame-rate n-channels))
+
+(defn buffer-mix-to-mono
+  "Synchronously create a new buffer with only one channel by mixing
+   buffer b down. Mixing is implemented simply by summing successive
+   samples from each channel and dividing by the number of
+   channels. Therefore, for a stereo buffer, the first sample for the
+   left channel is added to the first sample for the right channel and
+   the result is divided by two - and so on for each sample.
+
+   Useful for creating buffers to use with the t-grains ugen.
+
+   Original buffer is left unaffected. Requires internal server."
+  [b]
+  (ensure-buffer-active! b)
+  (let [n-chans (:n-channels b)
+        rate    (:rate b)]
+    (cond
+     (= 1 n-chans) b
+     :else
+     (let [data          (buffer-data b)
+           partitioned   (partition n-chans (seq data))
+           mixed         (mapv (fn [samps] (/ (apply + samps) n-chans)) partitioned)
+           tmp-file-path (mk-path (mk-tmp-dir!) "mono-file.wav")]
+
+       (write-wav mixed tmp-file-path rate 1)
+       (let [new-b (buffer-alloc-read tmp-file-path)]
+         (future (rm-rf! tmp-file-path))
+         new-b)))))

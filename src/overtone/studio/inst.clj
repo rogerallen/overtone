@@ -8,6 +8,21 @@
         [overtone.libs event])
   (:require [overtone.sc.protocols :as protocols]))
 
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord-ifn Inst [name params args sdef
+                         group instance-group fx-group
+                         mixer bus fx-chain
+                         volume pan
+                         n-chans]
+      (fn [this & args]
+        (apply synth-player sdef params this [:tail instance-group] args))
+
+      to-sc-id*
+      (to-sc-id [_] (to-sc-id instance-group)))))
+
+(derive Inst :overtone.sc.node/node)
+
 (def DEFAULT-VOLUME 1.0)
 (def DEFAULT-PAN    0.0)
 
@@ -115,18 +130,7 @@
               n-chans#
               inst-bus#]))))))
 
-(defrecord-ifn Inst [name params args sdef
-                     group instance-group fx-group
-                     mixer bus fx-chain
-                     volume pan
-                     n-chans]
-  (fn [this & args]
-    (apply synth-player sdef params this [:tail instance-group] args))
 
-  to-sc-id*
-  (to-sc-id [_] (to-sc-id instance-group)))
-
-(derive Inst :overtone.sc.node/node)
 
 (defn inst?
   "Returns true if o is an instrument, false otherwise"
@@ -183,7 +187,7 @@
   "Define an instrument and return a player function. The instrument
   definition will be loaded immediately, and a :new-inst event will be
   emitted. Expects a name, an optional doc-string, a vector of
-  instrument params, and a ugen-form as it's arguments.
+  instrument params, and a ugen-form as its arguments.
 
   Instrument parameters are a vector of name/value pairs, for example:
 
@@ -219,12 +223,12 @@
 
     is similar to:
 
-    (desfynth foo [freq 440]
+    (defsynth foo [freq 440]
       (out 0 (sin-osc freq))))
 
   * Instruments are limited to 1 or 2 channels. Instruments with more
     than 2 channels are allowed, but additional channels will not be
-    audible. Use the mix and pan2 ugen's to combine multiple channels
+    audible. Use the mix and pan2 ugens to combine multiple channels
     within your inst if needed. For example:
 
     (definst bar
@@ -245,14 +249,14 @@
     you to control the volume or pan of the instrument group with one
     command:
 
-    (inst-pan bar -1)     ;pan hard left.
-    (inst-volume bar 0.5) ;half the volume.
+    (inst-pan! bar -1)     ;pan hard left.
+    (inst-volume! bar 0.5) ;half the volume.
 
     For a stereo inst, you can control left and right pan or volume
     separately by passing an additional arg:
 
-    (inst-pan bar 1 -1)   ;ch1 right, ch2 left.
-    (inst-volume bar 0 1) ;mute ch1.
+    (inst-pan! bar 1 -1)   ;ch1 right, ch2 left.
+    (inst-volume! bar 0 1) ;mute ch1.
 
   * Each instrument has an fx-chain to which you can add any number of
     'fx synths' using the inst-fx function.

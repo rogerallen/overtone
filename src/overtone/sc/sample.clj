@@ -10,28 +10,84 @@
         [overtone.sc.machinery.server comms]
         [overtone.sc.cgens buf-io io]
         [overtone.studio core]
-        [overtone.helpers.file :only [glob canonical-path resolve-tilde-path mk-path]]))
+        [overtone.helpers.file :only [glob canonical-path resolve-tilde-path mk-path]])
+  (:require [overtone.sc.envelope :refer [asr]]))
+
+(declare sample-player)
+
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord Sample [id size n-channels rate status path args name]
+      to-sc-id*
+      (to-sc-id [this] (:id this)))
+
+    (defrecord-ifn PlayableSample
+      [id size n-channels rate status path args name]
+      sample-player
+      to-sc-id*
+      (to-sc-id [this] (:id this)))))
+
+(defmethod print-method Sample [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
+
+(defmethod print-method PlayableSample [b w]
+  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
+                    (name @(:status b))
+                    (:name b)
+                    (:duration b)
+                    (cond
+                     (= 1 (:n-channels b)) "mono"
+                     (= 2 (:n-channels b)) "stereo"
+                     :else (str (:n-channels b) " channels"))
+                    (:id b))))
+
+
 
 ; Define a default wav player synth
 (defonce __DEFINE-PLAYERS__
   (do
-    (defsynth mono-player
-      "Plays a single channel audio buffer."
-      [buf 0 rate 1.0 start-pos 0.0 loop? 0 amp 1 pan 0 out-bus 0]
-      (out out-bus (* amp
-                      (pan2
-                       (scaled-play-buf 1 buf rate
-                                        1 start-pos loop?
-                                        FREE)
-                       pan))))
 
-    (defsynth stereo-player
-      "Plays a dual channel audio buffer."
-      [buf 0 rate 1.0 start-pos 0.0 loop? 0 amp 1 pan 0 out-bus 0]
-      (let [s (scaled-play-buf 2 buf rate
-                               1 start-pos loop?
-                               FREE)]
-            (out out-bus (* amp (balance2 (first s) (second s) pan)))))
+    (defsynth mono-partial-player
+      "Plays a mono buffer from start pos to end pos (represented as
+       values between 0 and 1). May be looped via the loop?
+       argument. Release time is the release phase after the looping has
+       finished to remove clipping."
+      [buf 0 rate 1 start 0 end 1 loop? 0 amp 1 release 0.1 out-bus 0]
+      (let [n-frames  (buf-frames buf)
+            rate      (* rate (buf-rate-scale buf))
+            start-pos (* start n-frames)
+            end-pos   (* end n-frames)
+            phase     (phasor:ar :start start-pos :end end-pos :rate rate)
+            snd       (buf-rd 1 buf phase)
+            e-gate    (+ loop?
+                         (a2k (latch:ar (line 1 0 0.0001) (bpz2 phase))))
+            env       (env-gen (asr 0 1 release) :gate e-gate :action FREE)]
+        (out out-bus (* amp env snd))))
+
+    (defsynth stereo-partial-player
+      "Plays a stereo buffer from start pos to end pos (represented as
+       values between 0 and 1). May be looped via the loop?
+       argument. Release time is the release phase after the looping has
+       finished to remove clipping."
+      [buf 0 rate 1 start 0 end 1 loop? 0 amp 1 release 0.1 out-bus 0]
+      (let [n-frames  (buf-frames buf)
+            rate      (* rate (buf-rate-scale buf))
+            start-pos (* start n-frames)
+            end-pos   (* end n-frames)
+            phase     (phasor:ar :start start-pos :end end-pos :rate rate)
+            snd       (buf-rd 2 buf phase)
+            e-gate    (+ loop?
+                         (a2k (latch:ar (line 1 0 0.0001) (bpz2 phase))))
+            env       (env-gen (asr 0 1 release) :gate e-gate :action FREE)]
+        (out out-bus (* amp env snd))))
 
     (defsynth mono-stream-player
       "Plays a single channel streaming buffer-cue. Must be freed manually when
@@ -52,20 +108,6 @@
 (defonce loaded-samples* (atom {}))
 (defonce cached-samples* (atom {}))
 
-(defrecord Sample [id size n-channels rate status path args name]
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
-
-(defmethod print-method Sample [b w]
-  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
-                    (name @(:status b))
-                    (:name b)
-                    (:duration b)
-                    (cond
-                     (= 1 (:n-channels b)) "mono"
-                     (= 2 (:n-channels b)) "stereo"
-                     :else (str (:n-channels b) " channels"))
-                    (:id b))))
 
 (defn- load-sample*
   [path arg-map]
@@ -122,10 +164,11 @@
   (let [path  (apply mk-path path-glob)
         path  (resolve-tilde-path path)
         files (glob path)]
-    (doseq [file files]
-      (let [path (.getAbsolutePath file)]
-        (load-sample path))
-      files)))
+    (doall
+     (map (fn [file]
+            (let [path (.getAbsolutePath file)]
+              (load-sample path)))
+          files))))
 
 (defn- reload-all-samples []
   (let [previously-loaded-samples (vals @loaded-samples* )]
@@ -187,25 +230,10 @@
                                                                (foundation-default-group)
                                                                :tail)]
     (cond
-      (= n-channels 1) (apply mono-player [pos target] id pargs)
-      (= n-channels 2) (apply stereo-player [pos target] id pargs))))
+      (= n-channels 1) (apply mono-partial-player [pos target] id pargs)
+      (= n-channels 2) (apply stereo-partial-player [pos target] id pargs))))
 
-(defrecord-ifn PlayableSample
-  [id size n-channels rate status path args name]
-  sample-player
-  to-sc-id*
-  (to-sc-id [this] (:id this)))
 
-(defmethod print-method PlayableSample [b w]
-  (.write w (format "#<buffer[%s]: %s %fs %s %d>"
-                    (name @(:status b))
-                    (:name b)
-                    (:duration b)
-                    (cond
-                     (= 1 (:n-channels b)) "mono"
-                     (= 2 (:n-channels b)) "stereo"
-                     :else (str (:n-channels b) " channels"))
-                    (:id b))))
 
 (defn sample
   "Loads a .wav or .aiff file into a memory buffer. Returns a function

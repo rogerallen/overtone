@@ -5,9 +5,9 @@
   (:require clojure.stacktrace
             [overtone.config store]
             [overtone version osc speech]
-            [overtone.algo chance scaling trig fn]
+            [overtone.algo chance scaling trig fn lists]
             [overtone.sc bindings buffer bus envelope example info
-             ugens defcgen node sample server synth
+             ugens defcgen node sample server synth clock
              foundation-groups dyn-vars trig]
             [overtone.sc.cgens oscillators demand mix io buf-io env tap
              line freq beq-suite berlach bhob info]
@@ -54,6 +54,7 @@
    'overtone.algo.scaling
    'overtone.algo.trig
    'overtone.algo.fn
+   'overtone.algo.lists
    'overtone.config.store
    'overtone.sc.bindings
    'overtone.sc.buffer
@@ -83,6 +84,7 @@
    'overtone.sc.cgens.berlach
    'overtone.sc.cgens.bhob
    'overtone.sc.cgens.info
+   'overtone.sc.clock
    'overtone.studio.mixer
    'overtone.studio.inst
    'overtone.studio.fx

@@ -42,7 +42,11 @@
                :doc "1 means true, 0 means false. This is modulateable."}
 
               {:name "action"
-               :default 0}]
+               :default 0
+               :doc "an integer representing an action to be executed
+                     when the buffer is finished playing. This can be
+                     used to free the enclosing synth. Action is only
+                     evaluated if loop is 0"}]
        :doc "Plays back a sample resident in a buffer"}
 
 
@@ -110,12 +114,12 @@
                :default 1
                :mode :num-outs
                :doc "The number of channels of the supplied buffer. This
-                     must be a fixed integer. The architecture of the
-                     SynthDef cannot change after it is
-                     compiled. (Warning: if you supply a bufnum of a
-                     buffer that has a different numChannels than you
-                     have specified to the BufRd, it will fail
-                     silently)." }
+                     must be a fixed integer and not a signal or a
+                     control proxy. The architecture of the synth design
+                     cannot change after it is compiled. (Warning: if
+                     you supply a bufnum of a buffer that has a
+                     different number of channels than you have
+                     specified to buf-rd , it will fail silently)." }
 
               {:name "bufnum"
                :default 0
@@ -136,7 +140,7 @@
                :default 2
                :doc "1 means no interpolation, 2 is linear, 4 is cubic
                      interpolation"}]
-       ;; :check (when-ar (nth-input-ar 2))
+       :check (when-ar (nth-input-ar 1 "Phase must be audio rate. The following message is offset by 1 due to first arg being special.")) ;; first arg is in mode num-outs
        :doc "reads the contents of a buffer at a given index."}
 
       {:name "BufWr",
@@ -156,7 +160,7 @@
               {:name "loop"
                :default 1.0
                :doc "1 means true, 0 means false.  This is modulatable"}]
-;;       :check (when-ar (nth-input-ar 1))
+       :check (when-ar (nth-input-ar 1 "Phase must be audio rate. The following message is offset by 1 due to first arg being special."))  ;; first arg is in mode append-sequence
        :doc "writes to a buffer at a given index. Note, buf-wr (in
              difference to buf-rd) does not do multichannel expansion,
              because input is an array." }
@@ -201,7 +205,7 @@
                      from <= 0 to > 0." }
 
               {:name "action", :default 0
-               :doc "an integer representing an action to be aexecuted
+               :doc "an integer representing an action to be executed
                      when the buffer is finished playing. This can be
                      used to free the enclosing synth. Action is only
                      evaluated if loop is 0"}]
@@ -210,7 +214,7 @@
              data. If they are both 1.0 then the new data is added to
              the existing data. (Any other settings are also valid.)
              Note that the number of channels must be fixed for the
-             SynthDef, it cannot vary depending on which buffer you
+             defsynth, it cannot vary depending on which buffer you
              use." }
 
       {:name "ScopeOut",

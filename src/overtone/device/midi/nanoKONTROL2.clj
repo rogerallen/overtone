@@ -3,7 +3,9 @@
         [overtone.libs.event :only [event on-event on-latest-event]]
         [overtone.core :only [control-bus control-bus-set!]]))
 
-(defrecord NanoKontrol2 [name out interfaces state buses])
+(defonce ^{:private true} __RECORDS__
+  (do
+    (defrecord NanoKontrol2 [name out interfaces state buses])))
 
 (def event-handle [:midi-device "KORG INC." "SLIDER/KNOB" "nanoKONTROL2 SLIDER/KNOB" 0 :control-change])
 
@@ -171,7 +173,8 @@
   determined by recording the sysex messages that the official Korg
   Kontrol Editor sends to perform this task.)
 
-  On OS X, this requires the mmj library to be installed and enabled."
+  On OS X, this is currently broken due to broken Java support for MIDI
+  sysex messages."
   [nko]
    (doseq [m [sysex-1 sysex-2 sysex-3 sysex-4 sysex-5 sysex-6]]
      (midi-sysex (:out nko) m)))
