@@ -19,8 +19,6 @@
 
 # Collaborative Programmable Music.
 
-## A Live-programmable music exploration & collaboration toolkit.
-
 Overtone is an Open Source toolkit for designing synthesizers and
 collaborating with music.  It provides:
 
@@ -82,6 +80,41 @@ you see anything missing, please feel free to add it yourself, or hit us
 up on the [mailing list](http://groups.google.com/group/overtone) and
 we'll sort something out.
 
+## Cheat Sheet
+
+For a quick glance at all the exciting functionality Overtone puts at
+your musical fingertips check out the cheat sheet:
+
+https://github.com/overtone/overtone/raw/master/docs/cheatsheet/overtone-cheat-sheet.pdf
+
+## Overtone Powered Bands
+
+A list of bands using Overtone to generate sounds:
+
+* [Meta-eX](http://meta-ex.com)
+* [Repl Electric](http://repl-electric.com)
+
+## Community
+
+### Mailing List
+
+We encourage you to join the
+[mailing list](http://groups.google.com/group/overtone) to see what
+other people are getting up to with Overtone. Use it to ask questions,
+show off what you've made and even meet fellow Overtoners in your area
+so you can meet up for impromptu jam sessions. All we ask is that you be
+considerate, courteous and respectful and that you share as much of your
+code as possible so we can all learn how to make crazy cool sounds
+together.
+
+### Twitter
+
+Follow `@overtone` on Twitter: http://twitter.com/overtone
+
+### Web
+
+Our main website is hosted on GitHub: http://overtone.github.io
+
 ##  Videos
 
 ### Introductions
@@ -110,6 +143,7 @@ There are also the following tutorials:
 
 ### Presentations
 
+* Rich Hickey - Harmonikit: http://www.youtube.com/watch?v=bhkdyCPYgLs
 * Sam Aaron - Programming Music With Overtone: http://www.youtube.com/watch?v=imoWGsipe4k
 * Chris Ford - Functional Composition: http://www.youtube.com/watch?v=Mfsnlbd-4xQ
 * Meta-eX - Live Coding with Meta-eX: https://www.youtube.com/watch?v=zJqH5bNcIN0
@@ -128,36 +162,10 @@ philosophy of Overtone:
 
 ### Performances
 
-Sam Aaron performs with Overtone Live @ Arnolfini:
-
-  https://vimeo.com/46867490
-
-## Overtone Powered Bands
-
-A list of bands using Overtone to generate sounds:
-
-* [Meta-eX](http://meta-ex.com)
-* [Repl Electric](http://repl-electric.com)
+* Sam Aaron Live @ Arnolfini:  https://vimeo.com/46867490
+* Meta-eX Live @ Music Tech Fest: http://youtu.be/zJqH5bNcIN0?t=15m25s
 
 
-## Cheat Sheet
-
-For a quick glance at all the exciting functionality Overtone puts at
-your musical fingertips check out the cheat sheet:
-
-https://github.com/overtone/overtone/raw/master/docs/cheatsheet/overtone-cheat-sheet.pdf
-
-
-## Mailing List
-
-We encourage you to join the
-[mailing list](http://groups.google.com/group/overtone) to see what
-other people are getting up to with Overtone. Use it to ask questions,
-show off what you've made and even meet fellow Overtoners in your area
-so you can meet up for impromptu jam sessions. All we ask is that you be
-considerate, courteous and respectful and that you share as much of your
-code as possible so we can all learn how to make crazy cool sounds
-together.
 
 ## Source Repository
 
@@ -174,18 +182,6 @@ Overtone and its dependencies are on http://clojars.org, and the
 dependency for your `project.clj` is:
 
     [overtone "0.9.1"]
-
-## Acknowledgements
-
-To help us tune the JVM for realtime performance, we use YourKit.
-
-YourKit is kindly supporting open source projects with its full-featured
-Java Profiler.  YourKit, LLC is the creator of innovative and
-intelligent tools for profiling Java and .NET applications. Take a look
-at YourKit's leading software products:
-
-[YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp) and
-[YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp)
 
 ## Contributors
 
